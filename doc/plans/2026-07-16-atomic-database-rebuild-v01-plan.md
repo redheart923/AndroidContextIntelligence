@@ -1,6 +1,9 @@
 # Atomic Database Rebuild v0.1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Status:** Completed and verified on Windows and Ubuntu 24.04 WSL2 on
+2026-07-16.
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Make the canonical multi-repository rebuild publish one verified database/report batch without damaging the last verified batch when parsing, validation, publication, or the host process fails.
 
@@ -40,7 +43,7 @@
 - Produces: `write_build_manifest(batch: BuildBatch, source_config: Path, started_at: str, verified_at: str) -> Path`
 - Consumes later: the canonical rebuild and publication commands.
 
-- [ ] **Step 1: Write failing lifecycle tests**
+- [x] **Step 1: Write failing lifecycle tests**
 
 Create tests that express the required directory layout and failure cleanup before creating the production module:
 
@@ -79,7 +82,7 @@ def test_keep_failed_build_preserves_complete_batch(tmp_path: Path) -> None:
     assert batch.database.read_bytes() == b"partial"
 ```
 
-- [ ] **Step 2: Run the tests and verify RED**
+- [x] **Step 2: Run the tests and verify RED**
 
 Run:
 
@@ -90,7 +93,7 @@ python -m pytest -q tests/unit/test_build_publish.py
 
 Expected: collection fails because `workspace.build_publish` does not exist.
 
-- [ ] **Step 3: Implement the lifecycle model**
+- [x] **Step 3: Implement the lifecycle model**
 
 Implement this public shape:
 
@@ -131,7 +134,7 @@ def begin_build(data_root: Path, build_id: str | None = None) -> BuildBatch:
 
 Use UTC time, process ID, and `secrets.token_hex(4)` in `generate_build_id()`. Reject build IDs containing path separators or `..`.
 
-- [ ] **Step 4: Run lifecycle tests and the existing unit suite**
+- [x] **Step 4: Run lifecycle tests and the existing unit suite**
 
 Run:
 
@@ -141,7 +144,7 @@ python -m pytest -q tests/unit/test_build_publish.py tests/unit
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit the lifecycle model**
+- [x] **Step 5: Commit the lifecycle model**
 
 ```bash
 git add android-context-current/workspace android-context-current/tests/unit/test_build_publish.py
@@ -163,7 +166,7 @@ git commit -m "feat: add graph build batch lifecycle"
 - Produces: `ensure_live_database_quiescent(database: Path) -> None`
 - Requires: the existing `node` schema and `graph.writer.GraphWriter`.
 
-- [ ] **Step 1: Write failing build-ID and WAL tests**
+- [x] **Step 1: Write failing build-ID and WAL tests**
 
 Use a minimal real SQLite node table fixture. Assert that:
 
@@ -255,7 +258,7 @@ def test_busy_live_database_rejects_publication(tmp_path: Path) -> None:
     active.close()
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 ```bash
 python -m pytest -q \
@@ -266,7 +269,7 @@ python -m pytest -q \
 
 Expected: failures because the functions do not exist.
 
-- [ ] **Step 3: Implement build identity and WAL preparation**
+- [x] **Step 3: Implement build identity and WAL preparation**
 
 Use `GraphWriter.upsert_node()` with:
 
@@ -294,7 +297,7 @@ PRAGMA journal_mode=DELETE;
 
 Close the connection before checking sidecars. `ensure_live_database_quiescent()` must use a short SQLite timeout, checkpoint the live database when it exists, and reject publication when checkpoint reports busy or either sidecar remains.
 
-- [ ] **Step 4: Run all publisher tests**
+- [x] **Step 4: Run all publisher tests**
 
 ```bash
 python -m pytest -q tests/unit/test_build_publish.py
@@ -302,7 +305,7 @@ python -m pytest -q tests/unit/test_build_publish.py
 
 Expected: all publisher tests pass.
 
-- [ ] **Step 5: Commit build identity and WAL safety**
+- [x] **Step 5: Commit build identity and WAL safety**
 
 ```bash
 git add android-context-current/workspace/build_publish.py android-context-current/tests/unit/test_build_publish.py
@@ -324,7 +327,7 @@ git commit -m "feat: prepare sqlite graph builds for atomic publish"
 - Produces CLI commands: `begin`, `prepare`, `publish`, `fail`, `recover`.
 - Journal schema: `build_id`, `staging_root`, `rollback_root`, `phase`.
 
-- [ ] **Step 1: Write failing publication tests**
+- [x] **Step 1: Write failing publication tests**
 
 Use real SQLite files and report directories:
 
@@ -473,7 +476,7 @@ def test_first_build_failure_leaves_live_database_absent(tmp_path: Path) -> None
 
 Inject a failure immediately before `os.replace(staged_db, live_db)` through a private `_replace_database` callable passed to `publish_build()` only from tests. Do not add a production CLI flag for failure injection.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 ```bash
 python -m pytest -q tests/unit/test_build_publish.py -k "publish or recovery or first_build"
@@ -481,7 +484,7 @@ python -m pytest -q tests/unit/test_build_publish.py -k "publish or recovery or 
 
 Expected: failures because journaled publication is absent.
 
-- [ ] **Step 3: Implement durable journal writes**
+- [x] **Step 3: Implement durable journal writes**
 
 Write JSON to a sibling temporary file, flush and `os.fsync()` it, call `os.replace(temp, journal)`, then fsync the parent directory. Use the same helper for every journal phase transition.
 
@@ -494,7 +497,7 @@ new_reports_published
 database_committed
 ```
 
-- [ ] **Step 4: Implement publish and recovery**
+- [x] **Step 4: Implement publish and recovery**
 
 Before moving reports, call `ensure_live_database_quiescent()`.
 
@@ -515,7 +518,7 @@ On pre-commit recovery:
 
 On recovery, do not trust `phase` to decide whether the database committed. Call `read_graph_build_id(data/android_context.db)` and compare it with the journal build ID. A match means commit occurred and cleanup must finish; a mismatch means reports must roll back.
 
-- [ ] **Step 5: Write failing CLI tests**
+- [x] **Step 5: Write failing CLI tests**
 
 Invoke `main(argument_vector)` and verify exit codes and output for every subcommand. `begin` must print only the absolute staging path to stdout; diagnostic messages use stderr. `fail --keep` must print the retained absolute staging path.
 
@@ -561,7 +564,7 @@ def test_cli_publish_commits_ready_batch(tmp_path: Path) -> None:
     assert read_graph_build_id(tmp_path / "android_context.db") == "build-1"
 ```
 
-- [ ] **Step 6: Run CLI tests and verify RED**
+- [x] **Step 6: Run CLI tests and verify RED**
 
 ```bash
 python -m pytest -q tests/unit/test_build_publish.py -k cli
@@ -569,11 +572,11 @@ python -m pytest -q tests/unit/test_build_publish.py -k cli
 
 Expected: failures because CLI dispatch is absent.
 
-- [ ] **Step 7: Implement the CLI**
+- [x] **Step 7: Implement the CLI**
 
 Implement argparse subparsers with explicit required paths. Do not use `eval` or shell-formatted output. `prepare` accepts ISO timestamps and source-config path, records the graph node, writes the manifest, checkpoints WAL, and converts journal mode only after graph validation.
 
-- [ ] **Step 8: Run publisher tests twice to prove idempotence**
+- [x] **Step 8: Run publisher tests twice to prove idempotence**
 
 ```bash
 python -m pytest -q tests/unit/test_build_publish.py
@@ -582,7 +585,7 @@ python -m pytest -q tests/unit/test_build_publish.py
 
 Expected: both runs pass.
 
-- [ ] **Step 9: Commit journaled publication and CLI**
+- [x] **Step 9: Commit journaled publication and CLI**
 
 ```bash
 git add android-context-current/workspace/build_publish.py android-context-current/tests/unit/test_build_publish.py
@@ -602,7 +605,7 @@ git commit -m "feat: publish graph builds with recovery journal"
 - Produces command: `./scripts/rebuild_all.sh --keep-failed-db`.
 - Preserves commands: `--source-config`, `--discover-only`, `--plan-only`, `--strict`, `--strict-capability`.
 
-- [ ] **Step 1: Write failing script integration tests**
+- [x] **Step 1: Write failing script integration tests**
 
 Build a temporary project with a minimal schema and stub pipeline commands. Test:
 
@@ -623,7 +626,7 @@ pytestmark = pytest.mark.skipif(
 )
 ```
 
-- [ ] **Step 2: Run integration tests and verify RED**
+- [x] **Step 2: Run integration tests and verify RED**
 
 ```bash
 python -m pytest -q tests/integration/test_atomic_rebuild.py
@@ -631,7 +634,7 @@ python -m pytest -q tests/integration/test_atomic_rebuild.py
 
 Expected: failures because the canonical script still deletes the live database before parsing.
 
-- [ ] **Step 3: Implement staged orchestration**
+- [x] **Step 3: Implement staged orchestration**
 
 The full rebuild branch must follow this shell structure:
 
@@ -658,11 +661,11 @@ LOCAL_SERVICE_COUNT="$(sqlite3 "$STAGED_DB" \
 [[ "$LOCAL_SERVICE_COUNT" -ge 1 ]] || die "LocalServices validation failed"
 ```
 
-- [ ] **Step 4: Preserve non-database modes**
+- [x] **Step 4: Preserve non-database modes**
 
 Parse all options before acquiring the common lock. After locking, recover an interrupted publication. `--discover-only` and `--plan-only` then call `workspace.cli` with the published `data/workspace` output and exit before `begin`. `--help` exits before locking.
 
-- [ ] **Step 5: Run syntax and integration tests**
+- [x] **Step 5: Run syntax and integration tests**
 
 ```bash
 bash -n scripts/rebuild_all.sh
@@ -672,7 +675,7 @@ python -m pytest -q
 
 Expected: syntax passes and the complete snapshot suite passes.
 
-- [ ] **Step 6: Commit canonical staged rebuild**
+- [x] **Step 6: Commit canonical staged rebuild**
 
 ```bash
 git add android-context-current/scripts/rebuild_all.sh android-context-current/tests/integration/test_atomic_rebuild.py
@@ -697,7 +700,7 @@ git commit -m "feat: rebuild graph artifacts in staging"
   - `tests/integration/test_atomic_rebuild.py`;
   - `scripts/rebuild_all.sh`.
 
-- [ ] **Step 1: Write a failing payload synchronization test**
+- [x] **Step 1: Write a failing payload synchronization test**
 
 The test loads each development snapshot file and compares it byte-for-byte with the matching quoted heredoc in `install_multi_repository_source_configuration_v01.sh`.
 
@@ -707,7 +710,7 @@ def test_installer_payload_matches_snapshot(target: str, snapshot: Path) -> None
     assert extract_payload(INSTALLER, target) == snapshot.read_text(encoding="utf-8")
 ```
 
-- [ ] **Step 2: Run the synchronization test and verify RED**
+- [x] **Step 2: Run the synchronization test and verify RED**
 
 ```powershell
 python -m pytest -q tests/test_installer_payload_sync.py
@@ -715,7 +718,7 @@ python -m pytest -q tests/test_installer_payload_sync.py
 
 Expected: failure because the installer does not contain the new publisher payload.
 
-- [ ] **Step 3: Implement the payload extractor**
+- [x] **Step 3: Implement the payload extractor**
 
 Parse only quoted heredocs shaped as:
 
@@ -727,7 +730,7 @@ PY
 
 Reject missing targets, duplicate targets, unquoted delimiters, and unterminated payloads.
 
-- [ ] **Step 4: Embed the verified payloads**
+- [x] **Step 4: Embed the verified payloads**
 
 Add the publisher module and test heredocs to the installer and replace its canonical rebuild heredoc with the tested snapshot. Add `flock` to preflight checks. Update the installer test invocation so publisher and atomic integration tests run before the full AOSP rebuild.
 
@@ -740,7 +743,7 @@ data/.publish-journal.json
 data/.rebuild.lock
 ```
 
-- [ ] **Step 5: Run payload, Python, and shell validation**
+- [x] **Step 5: Run payload, Python, and shell validation**
 
 ```powershell
 python -m pytest -q tests/test_installer_payload_sync.py
@@ -751,7 +754,7 @@ git diff --check
 
 Expected: all checks pass.
 
-- [ ] **Step 6: Commit synchronized installer payloads**
+- [x] **Step 6: Commit synchronized installer payloads**
 
 ```bash
 git add scripts/verify_installer_payload.py tests/test_installer_payload_sync.py \
@@ -773,7 +776,7 @@ git commit -m "feat: install atomic graph rebuild support"
 **Interfaces:**
 - Documents: normal rebuild, retained failed build, recovery, concurrency error, and build-ID verification query.
 
-- [ ] **Step 1: Update user documentation**
+- [x] **Step 1: Update user documentation**
 
 Document these commands:
 
@@ -787,11 +790,11 @@ jq -r '.build_id' data/workspace/build-manifest.json
 
 Explain that a retained failure is stored under `data/staging/<build-id>` and that normal cleanup never removes the last verified database.
 
-- [ ] **Step 2: Update generated installation metadata**
+- [x] **Step 2: Update generated installation metadata**
 
 Ensure the installer records `workspace/build_publish.py`, its tests, and atomic rebuild behavior in `INSTALLATION_MANIFEST.txt` without requiring a sixth install script.
 
-- [ ] **Step 3: Validate documentation and payload consistency**
+- [x] **Step 3: Validate documentation and payload consistency**
 
 ```powershell
 rg -n "keep-failed-db|build-manifest|GRAPH_BUILD|staging" README.md android-context-current/README.md
@@ -801,7 +804,7 @@ git diff --check
 
 Expected: documentation contains all operational concepts and checks pass.
 
-- [ ] **Step 4: Commit documentation**
+- [x] **Step 4: Commit documentation**
 
 ```bash
 git add README.md android-context-current/README.md \
@@ -821,7 +824,7 @@ git commit -m "docs: explain atomic graph rebuild operations"
 - Uses the final self-contained `install_multi_repository_source_configuration_v01.sh`.
 - Produces final acceptance evidence.
 
-- [ ] **Step 1: Upgrade the existing WSL project**
+- [x] **Step 1: Upgrade the existing WSL project**
 
 ```bash
 cp -f /mnt/d/AndroidContextIntelligence/install_multi_repository_source_configuration_v01.sh /home/ts/
@@ -831,14 +834,14 @@ chmod +x /home/ts/install_multi_repository_source_configuration_v01.sh
 
 Expected: unit, integration, payload, full graph, foreign-key, AMS, PMS, and LocalServices validation passes.
 
-- [ ] **Step 2: Record the verified live database checksum**
+- [x] **Step 2: Record the verified live database checksum**
 
 ```bash
 cd /home/ts/android-context-intelligence
 sha256sum data/android_context.db > /tmp/graph-db-before.sha256
 ```
 
-- [ ] **Step 3: Force a staged importer failure**
+- [x] **Step 3: Force a staged importer failure**
 
 Use the integration fixture rather than corrupting AOSP or production code:
 
@@ -850,7 +853,7 @@ python -m pytest -q tests/integration/test_atomic_rebuild.py \
 
 Expected: all failure-safety tests pass.
 
-- [ ] **Step 4: Run a real successful rebuild**
+- [x] **Step 4: Run a real successful rebuild**
 
 ```bash
 ./scripts/rebuild_all.sh
@@ -859,7 +862,7 @@ sha256sum -c /tmp/graph-db-before.sha256 || true
 
 The checksum may change after a successful rebuild. The command is informational; acceptance depends on matching published build IDs and graph validation.
 
-- [ ] **Step 5: Verify batch identity and integrity**
+- [x] **Step 5: Verify batch identity and integrity**
 
 ```bash
 DB_BUILD_ID="$(sqlite3 data/android_context.db \
@@ -874,7 +877,7 @@ test ! -e data/android_context.db-shm
 
 Expected: all commands exit zero.
 
-- [ ] **Step 6: Run the complete suite and placeholder scan**
+- [x] **Step 6: Run the complete suite and placeholder scan**
 
 ```bash
 python -m pytest -q
@@ -884,7 +887,7 @@ grep -RInE 'TBD|TODO|implement later' \
 
 Expected: all tests pass and the placeholder scan has no implementation gaps.
 
-- [ ] **Step 7: Mark the plan complete and commit evidence**
+- [x] **Step 7: Mark the plan complete and commit evidence**
 
 Update the status and checked steps in this plan using the actual command output, then commit:
 
@@ -896,3 +899,29 @@ git commit -m "docs: complete atomic database rebuild v0.1"
 ## Completion Gate
 
 Do not proceed to the clean-install single-rebuild optimization until Task 7 has supplied fresh WSL evidence for every acceptance criterion in the approved design.
+
+## Completion Evidence
+
+- Feature branch commits were kept separate by logical task:
+  `974c1cd`, `468ef2a`, `005bf0c`, `5d34a00`, `6331034`, and `dc8a169`.
+- The final installer upgrade ran against `/home/ts/aosp` and completed its
+  6 workspace unit tests, 1 two-repository integration test, 30 atomic
+  publisher/rebuild tests, and a real staged graph rebuild.
+- The real graph rebuild imported 390,559 Java symbols, 885 AIDL interfaces,
+  6,569 AIDL methods, 4,670 `EXTENDS` edges, 4,265
+  `IMPLEMENTS_JAVA_INTERFACE` edges, and 317 service registrations.
+- `foreign_key_check: PASS`, AMS Binder, PMS transitive Binder, and
+  LocalServices validation all passed during both real rebuilds.
+- Failure-safety and concurrency integration tests passed 7/7. The live
+  database checksum remained
+  `838d1f77cff726555efac5f079398fc5206f56d24a0bb4e05f7c2b3383dbb330`
+  across the injected-failure suite.
+- A second canonical `./scripts/rebuild_all.sh` completed successfully and
+  published build ID `20260716T084024Z-5837-56743cd8` in both SQLite and
+  `data/workspace/build-manifest.json`.
+- Final live verification found no foreign-key output, no SQLite `-wal` or
+  `-shm` sidecars, and no `.publish-journal.json`.
+- The final WSL test suite passed 54/54 and the implementation placeholder
+  scan produced no output.
+- The generated WSL project was placed under Git control with baseline commit
+  `f6b0f7d` and atomic-upgrade commit `1186b53`.
