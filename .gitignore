@@ -25,3 +25,6 @@ data/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Isolated feature worktrees
+.worktrees/
