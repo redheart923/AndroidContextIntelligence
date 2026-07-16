@@ -2,7 +2,7 @@
 
 ## 当前版本状态
 
-Multi-Repository Source Configuration v0.1 已在现有 WSL 工程完成核心验收：6 个工作区单元测试和 1 个双仓库集成测试通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过。
+Multi-Repository Source Configuration v0.1 已完成实现和最终审计：完整测试套件 24 项通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过，能力报告字段和未实现占位符检查均通过。
 
 该版本已经可以用于配置和扫描多个 Java/AIDL 仓库。Kotlin、C/C++、Rust、HIDL 等语言会被检测并写入能力报告；没有对应语义解析器时不会被误报为已覆盖。
 

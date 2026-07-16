@@ -10,7 +10,7 @@
 
 ## Implementation Status (2026-07-16)
 
-**Status:** Core implementation and current-workspace acceptance passed. Only the installed-project placeholder scan from Task 12 remains open.
+**Status:** Complete. Core implementation, current-workspace acceptance, and the complete Task 12 audit passed.
 
 Verified in WSL on `/home/ts/android-context-intelligence`:
 
@@ -27,7 +27,7 @@ Verified in WSL on `/home/ts/android-context-intelligence`:
 
 The capability report audit found 18 valid entries with no missing fields. Unsupported entries were visible for every relevant language actually detected in the enabled repository set. Rust was not present because no Rust file was detected in the currently enabled `frameworks/base` scan; v0.1 must not manufacture a zero-file coverage entry.
 
-The installed project still needs one final scan for unresolved implementation placeholders before this plan is archived as fully complete.
+The final installed-project placeholder scan and direct SQLite foreign-key query both produced no output, completing the Task 12 audit.
 
 Post-v0.1 hardening is tracked separately and is not a blocker for the functional acceptance above: staged/atomic database replacement, a single final rebuild during clean installation, and lossless provenance for duplicate qualified names.
 
@@ -277,7 +277,7 @@ python -m collectors.source.<java_importer>   --workspace-plan data/workspace/ex
 - [x] Verify unsupported Kotlin/C/C++/Rust entries are visible when the corresponding language is detected. Kotlin, C, and C++ were detected and reported; Rust was not detected in the enabled repository set.
 - [x] Verify strict planning fails on an unsupported-language fixture.
 - [x] Verify the canonical rebuild reports `foreign_key_check: PASS`.
-- [ ] Search for unresolved placeholders:
+- [x] Search for unresolved placeholders; the scan produced no output:
 ```bash
 grep -RInE 'TBD|TODO|implement later'   workspace config scripts collectors tests README.md
 ```
