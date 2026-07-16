@@ -10,7 +10,7 @@ log() { printf '\n[%s] %s\n' "$(date '+%F %T')" "$*"; }
 die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
 trap 'die "failed at line $LINENO"' ERR
 
-for command in python3 ctags sqlite3; do
+for command in python3 ctags sqlite3 flock; do
     command -v "$command" >/dev/null 2>&1 || die "Missing command: $command"
 done
 [[ -d "$AOSP_ROOT" ]] || die "Missing AOSP root: $AOSP_ROOT"
@@ -861,6 +861,1183 @@ include = ["core", "services", "packages"]
 # languages = ["java", "kotlin", "aidl"]
 EOF
 
+cat > workspace/build_publish.py <<'PY_BUILD_PUBLISH'
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import secrets
+import shutil
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable
+
+from graph.writer import GraphWriter, Node
+
+
+RAW_REPORT_DIRECTORIES = ("ctags", "aidl", "inheritance", "service")
+
+
+class PublicationError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class BuildBatch:
+    data_root: Path
+    build_id: str
+    staging_root: Path
+    database: Path
+    workspace: Path
+    raw: Path
+    rollback_root: Path
+    journal: Path
+
+
+def generate_build_id() -> str:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return f"{timestamp}-{os.getpid()}-{secrets.token_hex(4)}"
+
+
+def _validate_build_id(build_id: str) -> str:
+    if (
+        not build_id
+        or build_id in {".", ".."}
+        or ".." in build_id
+        or "/" in build_id
+        or "\\" in build_id
+    ):
+        raise ValueError(f"unsafe build ID: {build_id!r}")
+    return build_id
+
+
+def _batch_from_parts(data_root: Path, build_id: str) -> BuildBatch:
+    staging_root = data_root / "staging" / build_id
+    return BuildBatch(
+        data_root=data_root,
+        build_id=build_id,
+        staging_root=staging_root,
+        database=staging_root / "android_context.db",
+        workspace=staging_root / "workspace",
+        raw=staging_root / "raw",
+        rollback_root=data_root / "rollback" / build_id,
+        journal=data_root / ".publish-journal.json",
+    )
+
+
+def begin_build(data_root: Path, build_id: str | None = None) -> BuildBatch:
+    resolved_root = data_root.resolve()
+    resolved_root.mkdir(parents=True, exist_ok=True)
+    identity = _validate_build_id(build_id or generate_build_id())
+    batch = _batch_from_parts(resolved_root, identity)
+    batch.staging_root.mkdir(parents=True, exist_ok=False)
+    batch.workspace.mkdir()
+    batch.raw.mkdir()
+    for name in RAW_REPORT_DIRECTORIES:
+        (batch.raw / name).mkdir()
+    return batch
+
+
+def load_build_batch(staging_root: Path) -> BuildBatch:
+    resolved_staging = staging_root.resolve()
+    if resolved_staging.parent.name != "staging":
+        raise ValueError(f"staging path must be under data/staging: {staging_root}")
+    build_id = _validate_build_id(resolved_staging.name)
+    return _batch_from_parts(resolved_staging.parent.parent, build_id)
+
+
+def cleanup_failed_build(batch: BuildBatch, keep: bool) -> Path | None:
+    if keep:
+        return batch.staging_root.resolve() if batch.staging_root.exists() else None
+    if batch.staging_root.exists():
+        shutil.rmtree(batch.staging_root)
+    return None
+
+
+def record_graph_build(
+    batch: BuildBatch,
+    source_config: Path,
+    started_at: str,
+    verified_at: str,
+) -> None:
+    writer = GraphWriter(batch.database)
+    try:
+        writer.upsert_node(
+            Node(
+                node_id=f"GRAPH_BUILD:{batch.build_id}",
+                node_type="GRAPH_BUILD",
+                qualified_name=batch.build_id,
+                display_name=batch.build_id,
+                properties={
+                    "source_config": str(source_config.resolve()),
+                    "started_at": started_at,
+                    "verified_at": verified_at,
+                },
+                extractor="build_publish",
+            )
+        )
+    finally:
+        writer.close()
+
+
+def write_build_manifest(
+    batch: BuildBatch,
+    source_config: Path,
+    started_at: str,
+    verified_at: str,
+) -> Path:
+    manifest = batch.workspace / "build-manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "build_id": batch.build_id,
+                "source_config": str(source_config.resolve()),
+                "started_at": started_at,
+                "status": "verified",
+                "verified_at": verified_at,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest
+
+
+def read_graph_build_id(database: Path) -> str | None:
+    if not database.is_file():
+        return None
+    try:
+        connection = sqlite3.connect(database)
+        row = connection.execute(
+            """
+            SELECT qualified_name
+            FROM node
+            WHERE node_type = 'GRAPH_BUILD'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        if "connection" in locals():
+            connection.close()
+    return str(row[0]) if row and row[0] is not None else None
+
+
+def _database_sidecars(database: Path) -> tuple[Path, Path]:
+    return Path(f"{database}-wal"), Path(f"{database}-shm")
+
+
+def _assert_no_sidecars(database: Path) -> None:
+    existing = [str(path) for path in _database_sidecars(database) if path.exists()]
+    if existing:
+        raise PublicationError(
+            "SQLite sidecar files prevent publication: " + ", ".join(existing)
+        )
+
+
+def prepare_staged_database(database: Path) -> None:
+    if not database.is_file():
+        raise PublicationError(f"staged database does not exist: {database}")
+    connection = sqlite3.connect(database, timeout=0.2)
+    try:
+        checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if checkpoint and int(checkpoint[0]) != 0:
+            raise PublicationError(f"staged database WAL is busy: {checkpoint}")
+        mode = connection.execute("PRAGMA journal_mode=DELETE").fetchone()
+        if not mode or str(mode[0]).lower() != "delete":
+            raise PublicationError(f"failed to disable staged WAL: {mode}")
+    finally:
+        connection.close()
+    _assert_no_sidecars(database)
+
+
+def ensure_live_database_quiescent(database: Path) -> None:
+    if not database.exists():
+        return
+    try:
+        connection = sqlite3.connect(database, timeout=0.2)
+        checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if checkpoint and int(checkpoint[0]) != 0:
+            raise PublicationError(f"live database WAL is busy: {checkpoint}")
+    except sqlite3.Error as error:
+        raise PublicationError(f"cannot checkpoint live database: {error}") from error
+    finally:
+        if "connection" in locals():
+            connection.close()
+    _assert_no_sidecars(database)
+
+
+def _fsync_directory(directory: Path) -> None:
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_publication_journal(batch: BuildBatch, phase: str) -> None:
+    payload = {
+        "build_id": batch.build_id,
+        "staging_root": str(batch.staging_root),
+        "rollback_root": str(batch.rollback_root),
+        "phase": phase,
+    }
+    batch.journal.parent.mkdir(parents=True, exist_ok=True)
+    temporary = batch.journal.with_name(
+        f"{batch.journal.name}.tmp-{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    try:
+        with temporary.open("x", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, batch.journal)
+        _fsync_directory(batch.journal.parent)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
+def _read_verified_manifest_build_id(batch: BuildBatch) -> str | None:
+    manifest = batch.workspace / "build-manifest.json"
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if payload.get("status") != "verified":
+        return None
+    identity = payload.get("build_id")
+    return str(identity) if identity is not None else None
+
+
+def _validate_batch_identity(batch: BuildBatch) -> None:
+    database_build_id = read_graph_build_id(batch.database)
+    manifest_build_id = _read_verified_manifest_build_id(batch)
+    if database_build_id != batch.build_id or manifest_build_id != batch.build_id:
+        raise PublicationError(
+            "build identity mismatch: "
+            f"expected {batch.build_id!r}, database={database_build_id!r}, "
+            f"manifest={manifest_build_id!r}"
+        )
+
+
+def _restore_precommit_reports(
+    batch: BuildBatch,
+    published_names: set[str],
+    backed_up_names: set[str],
+) -> None:
+    batch.staging_root.mkdir(parents=True, exist_ok=True)
+    for name in published_names:
+        live = batch.data_root / name
+        staged = batch.staging_root / name
+        if live.exists():
+            if staged.exists():
+                raise PublicationError(
+                    f"cannot restore staged {name}: destination already exists"
+                )
+            os.replace(live, staged)
+    for name in backed_up_names:
+        backup = batch.rollback_root / name
+        live = batch.data_root / name
+        if backup.exists():
+            if live.exists():
+                raise PublicationError(
+                    f"cannot restore live {name}: destination already exists"
+                )
+            os.replace(backup, live)
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+
+
+def publish_build(
+    batch: BuildBatch,
+    *,
+    replace_database: Callable[[Path, Path], None] = os.replace,
+) -> None:
+    _validate_batch_identity(batch)
+    _assert_no_sidecars(batch.database)
+    ensure_live_database_quiescent(batch.data_root / "android_context.db")
+    if batch.journal.exists():
+        raise PublicationError(
+            f"publication journal already exists: {batch.journal}; recover first"
+        )
+
+    backed_up_names: set[str] = set()
+    published_names: set[str] = set()
+    database_committed = False
+    _write_publication_journal(batch, "prepared")
+    try:
+        batch.rollback_root.mkdir(parents=True, exist_ok=False)
+        for name in ("workspace", "raw"):
+            live = batch.data_root / name
+            if live.exists():
+                os.replace(live, batch.rollback_root / name)
+                backed_up_names.add(name)
+        _write_publication_journal(batch, "old_reports_backed_up")
+
+        for name in ("workspace", "raw"):
+            staged = batch.staging_root / name
+            if not staged.is_dir():
+                raise PublicationError(f"staged report directory is missing: {staged}")
+            os.replace(staged, batch.data_root / name)
+            published_names.add(name)
+        _write_publication_journal(batch, "new_reports_published")
+
+        replace_database(batch.database, batch.data_root / "android_context.db")
+        database_committed = True
+        _write_publication_journal(batch, "database_committed")
+    except BaseException:
+        if not database_committed:
+            _restore_precommit_reports(batch, published_names, backed_up_names)
+            if batch.journal.exists():
+                batch.journal.unlink()
+                _fsync_directory(batch.journal.parent)
+        raise
+
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+    if batch.staging_root.exists():
+        shutil.rmtree(batch.staging_root)
+    if batch.journal.exists():
+        batch.journal.unlink()
+        _fsync_directory(batch.journal.parent)
+
+
+def _load_journal_batch(data_root: Path, payload: dict[str, object]) -> BuildBatch:
+    identity = _validate_build_id(str(payload.get("build_id", "")))
+    batch = _batch_from_parts(data_root, identity)
+    try:
+        staging = Path(str(payload["staging_root"])).resolve()
+        rollback = Path(str(payload["rollback_root"])).resolve()
+    except (KeyError, OSError) as error:
+        raise PublicationError("invalid publication journal paths") from error
+    if staging != batch.staging_root.resolve() or rollback != batch.rollback_root.resolve():
+        raise PublicationError("publication journal paths do not match build identity")
+    return batch
+
+
+def recover_publication(data_root: Path) -> str:
+    resolved_root = data_root.resolve()
+    journal = resolved_root / ".publish-journal.json"
+    if not journal.exists():
+        return "no_journal"
+    try:
+        payload = json.loads(journal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PublicationError(f"invalid publication journal: {journal}") from error
+    if not isinstance(payload, dict):
+        raise PublicationError(f"invalid publication journal: {journal}")
+    batch = _load_journal_batch(resolved_root, payload)
+
+    live_database = resolved_root / "android_context.db"
+    if read_graph_build_id(live_database) == batch.build_id:
+        if batch.rollback_root.exists():
+            shutil.rmtree(batch.rollback_root)
+        if batch.staging_root.exists():
+            shutil.rmtree(batch.staging_root)
+        journal.unlink()
+        _fsync_directory(journal.parent)
+        return "committed"
+
+    batch.staging_root.mkdir(parents=True, exist_ok=True)
+    for name in ("workspace", "raw"):
+        live = resolved_root / name
+        staged = batch.staging_root / name
+        backup = batch.rollback_root / name
+        if live.exists() and not staged.exists():
+            os.replace(live, staged)
+        if backup.exists():
+            if live.exists():
+                raise PublicationError(
+                    f"cannot recover {name}: live and rollback paths both exist"
+                )
+            os.replace(backup, live)
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+    journal.unlink()
+    _fsync_directory(journal.parent)
+    return "rolled_back"
+
+
+def _build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Publish verified graph build batches")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    begin = commands.add_parser("begin", help="create a staged build batch")
+    begin.add_argument("--data-root", type=Path, required=True)
+
+    prepare = commands.add_parser("prepare", help="identify and prepare a batch")
+    prepare.add_argument("--staging", type=Path, required=True)
+    prepare.add_argument("--source-config", type=Path, required=True)
+    prepare.add_argument("--started-at", required=True)
+    prepare.add_argument("--verified-at", required=True)
+
+    publish = commands.add_parser("publish", help="publish a verified batch")
+    publish.add_argument("--staging", type=Path, required=True)
+
+    fail = commands.add_parser("fail", help="clean up or retain a failed batch")
+    fail.add_argument("--staging", type=Path, required=True)
+    fail.add_argument("--keep", action="store_true")
+
+    recover = commands.add_parser("recover", help="recover interrupted publication")
+    recover.add_argument("--data-root", type=Path, required=True)
+    return parser
+
+
+def main(argument_vector: list[str] | None = None) -> int:
+    arguments = _build_argument_parser().parse_args(argument_vector)
+    if arguments.command == "begin":
+        print(begin_build(arguments.data_root).staging_root.resolve())
+        return 0
+    if arguments.command == "prepare":
+        batch = load_build_batch(arguments.staging)
+        record_graph_build(
+            batch,
+            arguments.source_config,
+            arguments.started_at,
+            arguments.verified_at,
+        )
+        write_build_manifest(
+            batch,
+            arguments.source_config,
+            arguments.started_at,
+            arguments.verified_at,
+        )
+        prepare_staged_database(batch.database)
+        return 0
+    if arguments.command == "publish":
+        publish_build(load_build_batch(arguments.staging))
+        return 0
+    if arguments.command == "fail":
+        retained = cleanup_failed_build(
+            load_build_batch(arguments.staging),
+            keep=arguments.keep,
+        )
+        if retained is not None:
+            print(retained)
+        return 0
+    if arguments.command == "recover":
+        print(recover_publication(arguments.data_root))
+        return 0
+    raise AssertionError(f"unhandled command: {arguments.command}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+PY_BUILD_PUBLISH
+
+cat > tests/unit/test_build_publish.py <<'PY_BUILD_PUBLISH_TEST'
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+from graph.writer import GraphWriter, Node
+from workspace.build_publish import (
+    PublicationError,
+    begin_build,
+    cleanup_failed_build,
+    ensure_live_database_quiescent,
+    load_build_batch,
+    main,
+    prepare_staged_database,
+    publish_build,
+    read_graph_build_id,
+    record_graph_build,
+    recover_publication,
+    write_build_manifest,
+)
+
+
+def create_full_node_schema(path: Path) -> None:
+    connection = sqlite3.connect(path)
+    connection.executescript(
+        """
+        CREATE TABLE node (
+          node_id TEXT PRIMARY KEY,
+          node_type TEXT NOT NULL,
+          qualified_name TEXT,
+          display_name TEXT NOT NULL,
+          properties_json TEXT NOT NULL DEFAULT '{}',
+          source_path TEXT,
+          line_start INTEGER,
+          line_end INTEGER,
+          source_revision TEXT,
+          extractor TEXT NOT NULL,
+          extractor_version TEXT NOT NULL,
+          content_hash TEXT,
+          status TEXT NOT NULL DEFAULT 'active',
+          updated_at TEXT NOT NULL
+        );
+        """
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_begin_build_creates_isolated_batch(tmp_path: Path) -> None:
+    live_db = tmp_path / "android_context.db"
+    live_db.write_bytes(b"verified")
+
+    batch = begin_build(tmp_path, build_id="build-1")
+
+    assert batch.staging_root == tmp_path / "staging" / "build-1"
+    assert batch.database == batch.staging_root / "android_context.db"
+    assert batch.workspace.is_dir()
+    assert batch.raw.is_dir()
+    assert (batch.raw / "ctags").is_dir()
+    assert (batch.raw / "aidl").is_dir()
+    assert (batch.raw / "inheritance").is_dir()
+    assert (batch.raw / "service").is_dir()
+    assert live_db.read_bytes() == b"verified"
+
+
+def test_load_build_batch_reconstructs_paths(tmp_path: Path) -> None:
+    created = begin_build(tmp_path, build_id="build-1")
+
+    loaded = load_build_batch(created.staging_root)
+
+    assert loaded == created
+
+
+@pytest.mark.parametrize("build_id", ["../escape", "nested/name", "nested\\name", ".."])
+def test_begin_build_rejects_unsafe_build_id(tmp_path: Path, build_id: str) -> None:
+    with pytest.raises(ValueError, match="build ID"):
+        begin_build(tmp_path, build_id=build_id)
+
+
+def test_failed_build_is_deleted_by_default_and_cleanup_is_idempotent(
+    tmp_path: Path,
+) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    batch.database.write_bytes(b"partial")
+
+    retained = cleanup_failed_build(batch, keep=False)
+
+    assert retained is None
+    assert not batch.staging_root.exists()
+    assert cleanup_failed_build(batch, keep=False) is None
+
+
+def test_keep_failed_build_preserves_complete_batch(tmp_path: Path) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    batch.database.write_bytes(b"partial")
+    (batch.workspace / "report.json").write_text("{}", encoding="utf-8")
+
+    retained = cleanup_failed_build(batch, keep=True)
+
+    assert retained == batch.staging_root.resolve()
+    assert batch.database.read_bytes() == b"partial"
+    assert (batch.workspace / "report.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    source_config = tmp_path / "source_roots.toml"
+    source_config.write_text("[workspace]\n", encoding="utf-8")
+    create_full_node_schema(batch.database)
+
+    record_graph_build(
+        batch,
+        source_config,
+        "2026-07-16T15:00:00Z",
+        "2026-07-16T15:01:00Z",
+    )
+    write_build_manifest(
+        batch,
+        source_config,
+        "2026-07-16T15:00:00Z",
+        "2026-07-16T15:01:00Z",
+    )
+
+    assert read_graph_build_id(batch.database) == batch.build_id
+    manifest = json.loads(
+        (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest == {
+        "build_id": "build-1",
+        "source_config": str(source_config.resolve()),
+        "started_at": "2026-07-16T15:00:00Z",
+        "status": "verified",
+        "verified_at": "2026-07-16T15:01:00Z",
+    }
+
+
+def test_prepare_staged_database_removes_wal_sidecars(tmp_path: Path) -> None:
+    database = tmp_path / "staged.db"
+    connection = sqlite3.connect(database)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("CREATE TABLE sample(value TEXT)")
+    connection.execute("INSERT INTO sample VALUES('value')")
+    connection.commit()
+    connection.close()
+
+    prepare_staged_database(database)
+
+    connection = sqlite3.connect(database)
+    assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    connection.close()
+    assert not Path(f"{database}-wal").exists()
+    assert not Path(f"{database}-shm").exists()
+
+
+def test_busy_live_database_rejects_publication(tmp_path: Path) -> None:
+    database = tmp_path / "android_context.db"
+    active = sqlite3.connect(database)
+    active.execute("PRAGMA journal_mode=WAL")
+    active.execute("CREATE TABLE sample(value TEXT)")
+    active.execute("INSERT INTO sample VALUES('active')")
+    active.commit()
+    sidecar = Path(f"{database}-wal")
+    assert sidecar.exists()
+
+    try:
+        with pytest.raises(PublicationError, match="sidecar"):
+            ensure_live_database_quiescent(database)
+        assert sidecar.exists()
+    finally:
+        active.close()
+
+
+def test_missing_live_database_is_quiescent(tmp_path: Path) -> None:
+    ensure_live_database_quiescent(tmp_path / "missing.db")
+
+
+def seed_database(path: Path, build_id: str) -> None:
+    create_full_node_schema(path)
+    writer = GraphWriter(path)
+    writer.upsert_node(
+        Node(
+            node_id=f"GRAPH_BUILD:{build_id}",
+            node_type="GRAPH_BUILD",
+            qualified_name=build_id,
+            display_name=build_id,
+            extractor="test",
+        )
+    )
+    writer.close()
+
+
+def seed_reports(root: Path, marker: str) -> None:
+    for name in ("workspace", "raw"):
+        directory = root / name
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "marker.txt").write_text(marker, encoding="utf-8")
+
+
+def ready_batch(data_root: Path, build_id: str = "new"):
+    batch = begin_build(data_root, build_id=build_id)
+    seed_database(batch.database, build_id)
+    (batch.workspace / "marker.txt").write_text("new", encoding="utf-8")
+    (batch.workspace / "build-manifest.json").write_text(
+        json.dumps({"build_id": build_id, "status": "verified"}),
+        encoding="utf-8",
+    )
+    (batch.raw / "marker.txt").write_text("new", encoding="utf-8")
+    return batch
+
+
+def test_publish_replaces_reports_and_database_as_one_batch(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+
+    publish_build(batch)
+
+    assert read_graph_build_id(data / "android_context.db") == "new"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "new"
+    assert (data / "raw/marker.txt").read_text(encoding="utf-8") == "new"
+    assert not batch.journal.exists()
+    assert not batch.rollback_root.exists()
+    assert not batch.staging_root.exists()
+
+
+def test_precommit_failure_restores_old_batch(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    before = hashlib.sha256((data / "android_context.db").read_bytes()).hexdigest()
+    batch = ready_batch(data)
+
+    def fail_replace(source: Path, target: Path) -> None:
+        raise OSError("injected database replacement failure")
+
+    with pytest.raises(OSError, match="injected"):
+        publish_build(batch, replace_database=fail_replace)
+
+    after = hashlib.sha256((data / "android_context.db").read_bytes()).hexdigest()
+    assert after == before
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
+    assert (batch.workspace / "marker.txt").read_text(encoding="utf-8") == "new"
+    assert not batch.journal.exists()
+
+
+def test_publish_rejects_mismatched_identity_before_moving_live_files(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+    (batch.workspace / "build-manifest.json").write_text(
+        json.dumps({"build_id": "different", "status": "verified"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PublicationError, match="build identity"):
+        publish_build(batch)
+
+    assert read_graph_build_id(data / "android_context.db") == "old"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
+
+
+def simulate_reports_published(batch) -> None:
+    batch.rollback_root.mkdir(parents=True)
+    os.replace(batch.data_root / "workspace", batch.rollback_root / "workspace")
+    os.replace(batch.data_root / "raw", batch.rollback_root / "raw")
+    os.replace(batch.workspace, batch.data_root / "workspace")
+    os.replace(batch.raw, batch.data_root / "raw")
+    batch.journal.write_text(
+        json.dumps(
+            {
+                "build_id": batch.build_id,
+                "staging_root": str(batch.staging_root),
+                "rollback_root": str(batch.rollback_root),
+                "phase": "new_reports_published",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_recovery_rolls_back_when_database_has_old_build_id(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+    simulate_reports_published(batch)
+
+    assert recover_publication(data) == "rolled_back"
+    assert read_graph_build_id(data / "android_context.db") == "old"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
+    assert (batch.workspace / "marker.txt").read_text(encoding="utf-8") == "new"
+    assert not batch.journal.exists()
+
+
+def test_recovery_finishes_cleanup_when_database_has_new_build_id(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+    simulate_reports_published(batch)
+    os.replace(batch.database, data / "android_context.db")
+
+    assert recover_publication(data) == "committed"
+    assert read_graph_build_id(data / "android_context.db") == "new"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "new"
+    assert not batch.rollback_root.exists()
+    assert not batch.journal.exists()
+    assert recover_publication(data) == "no_journal"
+
+
+def test_first_build_failure_leaves_live_database_absent(tmp_path: Path) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    batch = ready_batch(data)
+
+    def fail_replace(source: Path, target: Path) -> None:
+        raise OSError("injected first-build failure")
+
+    with pytest.raises(OSError, match="first-build"):
+        publish_build(batch, replace_database=fail_replace)
+
+    assert not (data / "android_context.db").exists()
+    assert batch.database.exists()
+
+
+def test_cli_begin_prints_only_staging_path(tmp_path: Path, capsys) -> None:
+    assert main(["begin", "--data-root", str(tmp_path)]) == 0
+
+    captured = capsys.readouterr()
+    staging = Path(captured.out.strip())
+    assert captured.err == ""
+    assert staging.parent == tmp_path.resolve() / "staging"
+    assert staging.is_dir()
+
+
+def test_cli_fail_keep_prints_retained_path(tmp_path: Path, capsys) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+
+    assert main(["fail", "--staging", str(batch.staging_root), "--keep"]) == 0
+
+    assert Path(capsys.readouterr().out.strip()) == batch.staging_root.resolve()
+
+
+def test_cli_recover_without_journal_is_success(tmp_path: Path, capsys) -> None:
+    assert main(["recover", "--data-root", str(tmp_path)]) == 0
+
+    assert capsys.readouterr().out.strip() == "no_journal"
+
+
+def test_cli_prepare_records_and_checkpoints_batch(tmp_path: Path) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    create_full_node_schema(batch.database)
+    source_config = tmp_path / "source_roots.toml"
+    source_config.write_text("[workspace]\n", encoding="utf-8")
+
+    assert main(
+        [
+            "prepare",
+            "--staging",
+            str(batch.staging_root),
+            "--source-config",
+            str(source_config),
+            "--started-at",
+            "2026-07-16T15:00:00Z",
+            "--verified-at",
+            "2026-07-16T15:01:00Z",
+        ]
+    ) == 0
+
+    assert read_graph_build_id(batch.database) == "build-1"
+    manifest = json.loads(
+        (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["build_id"] == "build-1"
+
+
+def test_cli_publish_commits_ready_batch(tmp_path: Path) -> None:
+    batch = ready_batch(tmp_path, build_id="build-1")
+
+    assert main(["publish", "--staging", str(batch.staging_root)]) == 0
+
+    assert read_graph_build_id(tmp_path / "android_context.db") == "build-1"
+PY_BUILD_PUBLISH_TEST
+
+cat > tests/integration/test_atomic_rebuild.py <<'PY_ATOMIC_REBUILD_TEST'
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import time
+from pathlib import Path
+
+import pytest
+
+
+SNAPSHOT_ROOT = Path(__file__).resolve().parents[2]
+CANONICAL_SCRIPT = SNAPSHOT_ROOT / "scripts" / "rebuild_all.sh"
+BASH = shutil.which("bash")
+FLOCK = shutil.which("flock")
+
+
+def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
+    script = CANONICAL_SCRIPT.read_text(encoding="utf-8")
+
+    assert "--keep-failed-db" in script
+    assert 'flock -n 9' in script
+    assert "workspace.build_publish recover" in script
+    assert "workspace.build_publish begin" in script
+    assert "workspace.build_publish prepare" in script
+    assert "workspace.build_publish publish" in script
+    assert 'STAGED_DB="$STAGING/android_context.db"' in script
+    assert 'STAGED_WORKSPACE="$STAGING/workspace"' in script
+    assert 'STAGED_RAW="$STAGING/raw"' in script
+
+
+SCHEMA = """
+CREATE TABLE node (
+  node_id TEXT PRIMARY KEY,
+  node_type TEXT NOT NULL,
+  qualified_name TEXT,
+  display_name TEXT NOT NULL,
+  properties_json TEXT NOT NULL DEFAULT '{}',
+  source_path TEXT,
+  line_start INTEGER,
+  line_end INTEGER,
+  source_revision TEXT,
+  extractor TEXT NOT NULL,
+  extractor_version TEXT NOT NULL,
+  content_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE edge (
+  edge_id TEXT PRIMARY KEY,
+  edge_type TEXT NOT NULL,
+  from_node_id TEXT NOT NULL,
+  to_node_id TEXT NOT NULL,
+  properties_json TEXT NOT NULL DEFAULT '{}',
+  source_path TEXT,
+  line_start INTEGER,
+  line_end INTEGER,
+  source_revision TEXT,
+  extractor TEXT NOT NULL,
+  extractor_version TEXT NOT NULL,
+  content_hash TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(from_node_id) REFERENCES node(node_id),
+  FOREIGN KEY(to_node_id) REFERENCES node(node_id)
+);
+"""
+
+
+CLI_STUB = r'''from __future__ import annotations
+import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--config", required=True)
+parser.add_argument("--registry", required=True)
+parser.add_argument("--out-dir", type=Path, required=True)
+parser.add_argument("--strict", action="store_true")
+parser.add_argument("--strict-capability")
+args = parser.parse_args()
+args.out_dir.mkdir(parents=True, exist_ok=True)
+(args.out_dir / "execution-plan.json").write_text("{}\n", encoding="utf-8")
+(args.out_dir / "capability-report.json").write_text(
+    json.dumps([{"status": "scheduled"}]) + "\n", encoding="utf-8"
+)
+(args.out_dir / "marker.txt").write_text("new", encoding="utf-8")
+'''
+
+
+PIPELINE_STUB = r'''from __future__ import annotations
+import argparse
+import os
+from pathlib import Path
+from graph.writer import Edge, GraphWriter, Node
+
+parser = argparse.ArgumentParser()
+parser.add_argument("command")
+parser.add_argument("--plan")
+parser.add_argument("--db", type=Path, required=True)
+parser.add_argument("--ctags-dir", type=Path)
+parser.add_argument("--report-dir", type=Path)
+args = parser.parse_args()
+if args.command == "java" and os.environ.get("FORCE_IMPORTER_FAILURE") == "1":
+    raise SystemExit(17)
+if args.ctags_dir:
+    args.ctags_dir.mkdir(parents=True, exist_ok=True)
+    (args.ctags_dir / "marker.txt").write_text("new", encoding="utf-8")
+if args.command == "annotate":
+    writer = GraphWriter(args.db)
+    writer.upsert_node(Node(
+        node_id="JAVA_CLASS:fixture.LocalService",
+        node_type="JAVA_CLASS",
+        qualified_name="fixture.LocalService",
+        display_name="LocalService",
+        extractor="fixture",
+    ))
+    writer.upsert_node(Node(
+        node_id="LOCAL_SERVICE_KEY:fixture.LocalKey",
+        node_type="LOCAL_SERVICE_KEY",
+        qualified_name="fixture.LocalKey",
+        display_name="LocalKey",
+        extractor="fixture",
+    ))
+    writer.upsert_edge(Edge(
+        edge_type="EXPOSED_AS_LOCAL_SERVICE",
+        from_node_id="JAVA_CLASS:fixture.LocalService",
+        to_node_id="LOCAL_SERVICE_KEY:fixture.LocalKey",
+        extractor="fixture",
+    ))
+    writer.close()
+'''
+
+
+REPORT_STUB = r'''from __future__ import annotations
+import argparse
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--plan")
+parser.add_argument("--db")
+parser.add_argument("--report", type=Path, required=True)
+args = parser.parse_args()
+args.report.parent.mkdir(parents=True, exist_ok=True)
+args.report.write_text("{}\n", encoding="utf-8")
+'''
+
+
+def _write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+
+
+def _seed_database(path: Path, build_id: str) -> None:
+    connection = sqlite3.connect(path)
+    connection.executescript(SCHEMA)
+    connection.execute(
+        """
+        INSERT INTO node (
+            node_id, node_type, qualified_name, display_name, properties_json,
+            source_revision, extractor, extractor_version, content_hash,
+            status, updated_at
+        ) VALUES (?, 'GRAPH_BUILD', ?, ?, '{}', 'fixture', 'fixture', '1', '',
+                  'active', '2026-07-16T00:00:00Z')
+        """,
+        (f"GRAPH_BUILD:{build_id}", build_id, build_id),
+    )
+    connection.commit()
+    connection.close()
+
+
+@pytest.fixture
+def project(tmp_path: Path) -> Path:
+    if BASH is None or FLOCK is None:
+        pytest.skip("atomic rebuild integration requires bash and flock")
+    root = tmp_path / "project"
+    root.mkdir()
+    shutil.copytree(SNAPSHOT_ROOT / "workspace", root / "workspace")
+    shutil.copytree(SNAPSHOT_ROOT / "graph", root / "graph")
+    (root / "scripts").mkdir()
+    shutil.copy2(CANONICAL_SCRIPT, root / "scripts" / "rebuild_all.sh")
+    _write(root / ".venv/bin/activate", "")
+    _write(root / "storage/schema.sql", SCHEMA)
+    _write(root / "config/source_roots.toml", "[workspace]\n")
+    _write(root / "config/parser_registry.toml", "[parsers]\n")
+    _write(root / "workspace/cli.py", CLI_STUB)
+    _write(root / "workspace/pipeline.py", PIPELINE_STUB)
+    _write(root / "workspace/multi_aidl.py", REPORT_STUB)
+    _write(root / "workspace/multi_service.py", REPORT_STUB)
+    data = root / "data"
+    data.mkdir()
+    _seed_database(data / "android_context.db", "old")
+    for name in ("workspace", "raw"):
+        _write(data / name / "marker.txt", "old")
+    return root
+
+
+def _run(project: Path, *arguments: str, **environment: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env.update(environment)
+    return subprocess.run(
+        [BASH, str(project / "scripts/rebuild_all.sh"), *arguments],
+        cwd=project,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def _checksum(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_forced_importer_failure_preserves_live_batch(project: Path) -> None:
+    database = project / "data/android_context.db"
+    before = _checksum(database)
+
+    result = _run(project, FORCE_IMPORTER_FAILURE="1")
+
+    assert result.returncode != 0
+    assert _checksum(database) == before
+    assert (project / "data/workspace/marker.txt").read_text() == "old"
+    assert (project / "data/raw/marker.txt").read_text() == "old"
+    staging = project / "data/staging"
+    assert not staging.exists() or not any(staging.iterdir())
+
+
+def test_keep_failed_retains_and_prints_staging_batch(project: Path) -> None:
+    result = _run(project, "--keep-failed-db", FORCE_IMPORTER_FAILURE="1")
+
+    assert result.returncode != 0
+    retained = [
+        Path(line)
+        for line in result.stdout.splitlines()
+        if "/data/staging/" in line
+    ]
+    assert len(retained) == 1
+    assert retained[0].is_dir()
+
+
+def test_plan_only_creates_no_staged_database(project: Path) -> None:
+    shutil.rmtree(project / "data/workspace")
+
+    result = _run(project, "--plan-only")
+
+    assert result.returncode == 0, result.stderr
+    assert (project / "data/workspace/execution-plan.json").is_file()
+    assert not (project / "data/staging").exists()
+
+
+@pytest.mark.parametrize("arguments", [(), ("--plan-only",)])
+def test_common_lock_rejects_concurrent_modes(
+    project: Path,
+    arguments: tuple[str, ...],
+) -> None:
+    lock = project / "data/.rebuild.lock"
+    holder = subprocess.Popen([FLOCK, "-n", str(lock), "sleep", "5"])
+    try:
+        time.sleep(0.2)
+        result = _run(project, *arguments)
+    finally:
+        holder.terminate()
+        holder.wait(timeout=5)
+
+    assert result.returncode != 0
+    assert "another rebuild is already running" in result.stderr
+    assert (project / "data/workspace/marker.txt").read_text() == "old"
+
+
+def test_successful_publication_exposes_matching_build_ids(project: Path) -> None:
+    result = _run(project)
+
+    assert result.returncode == 0, result.stderr
+    database = project / "data/android_context.db"
+    connection = sqlite3.connect(database)
+    database_build_id = connection.execute(
+        "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD'"
+    ).fetchone()[0]
+    connection.close()
+    manifest = json.loads(
+        (project / "data/workspace/build-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["build_id"] == database_build_id
+    assert (project / "data/workspace/marker.txt").read_text() == "new"
+    assert (project / "data/raw/ctags/marker.txt").read_text() == "new"
+PY_ATOMIC_REBUILD_TEST
+
 cat > config/parser_registry.toml <<'EOF'
 [parsers.java]
 implementation = "java_symbol_importer"
@@ -910,51 +2087,206 @@ enabled = false
 capabilities = []
 EOF
 
-cat > scripts/rebuild_all.sh <<'SH'
+cat > scripts/rebuild_all.sh <<'SH_REBUILD'
 #!/usr/bin/env bash
 set -Eeuo pipefail
+
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
-WORKSPACE_DIR="$PROJECT_ROOT/data/workspace"
-PLAN="$WORKSPACE_DIR/execution-plan.json"
-DB="$PROJECT_ROOT/data/android_context.db"
-MODE="rebuild"; STRICT=();
+MODE="rebuild"
+KEEP_FAILED=0
+STRICT=()
+
+usage() {
+    cat <<'EOF'
+Usage: rebuild_all.sh [OPTIONS]
+
+Options:
+  --source-config FILE        Use an alternate source-roots configuration.
+  --discover-only             Refresh workspace discovery reports only.
+  --plan-only                 Refresh the execution plan only.
+  --strict                    Fail on every unsupported detected capability.
+  --strict-capability NAME    Fail when NAME lacks parser coverage.
+  --keep-failed-db            Retain the complete failed staging batch.
+  -h, --help                  Show this help.
+EOF
+}
+
+die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --source-config) SOURCE_CONFIG="$2"; shift 2;;
-    --discover-only) MODE="discover"; shift;;
-    --plan-only) MODE="plan"; shift;;
-    --strict) STRICT+=(--strict); shift;;
-    --strict-capability) STRICT+=(--strict-capability "$2"); shift 2;;
-    -h|--help) echo "Usage: $0 [--source-config FILE] [--discover-only|--plan-only] [--strict] [--strict-capability NAME]"; exit 0;;
-    *) echo "Unknown argument: $1" >&2; exit 2;;
-  esac
+    case "$1" in
+        --source-config)
+            [[ $# -ge 2 ]] || die "--source-config requires a path"
+            SOURCE_CONFIG="$2"
+            shift 2
+            ;;
+        --discover-only)
+            MODE="discover"
+            shift
+            ;;
+        --plan-only)
+            MODE="plan"
+            shift
+            ;;
+        --strict)
+            STRICT+=(--strict)
+            shift
+            ;;
+        --strict-capability)
+            [[ $# -ge 2 ]] || die "--strict-capability requires a name"
+            STRICT+=(--strict-capability "$2")
+            shift 2
+            ;;
+        --keep-failed-db)
+            KEEP_FAILED=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
 done
-cd "$PROJECT_ROOT"; source .venv/bin/activate; export PYTHONPATH="$PROJECT_ROOT"
-python -m workspace.cli --config "$SOURCE_CONFIG" --registry "$REGISTRY" --out-dir "$WORKSPACE_DIR" "${STRICT[@]}"
-[[ "$MODE" == "discover" || "$MODE" == "plan" ]] && exit 0
-rm -f "$DB"; sqlite3 "$DB" < storage/schema.sql
-rm -rf data/raw/ctags data/raw/aidl data/raw/inheritance data/raw/service
-mkdir -p data/raw/ctags data/raw/aidl data/raw/inheritance data/raw/service
-python -m workspace.pipeline java --plan "$PLAN" --db "$DB" --ctags-dir data/raw/ctags
-python -m workspace.multi_aidl --plan "$PLAN" --db "$DB" --report data/raw/aidl/aidl-binder-report.json
-python -m workspace.pipeline inheritance --plan "$PLAN" --db "$DB" --ctags-dir data/raw/ctags --report-dir data/raw/inheritance
-python -m workspace.multi_service --plan "$PLAN" --db "$DB" --report data/raw/service/service-registration-report.json
-python -m workspace.pipeline annotate --plan "$PLAN" --db "$DB"
-if [[ -n "$(sqlite3 "$DB" 'PRAGMA foreign_key_check;')" ]]; then echo "foreign_key_check: FAIL" >&2; exit 5; fi
-echo "foreign_key_check: PASS"
-[[ -f queries/ams_service_chain.sql ]] && sqlite3 -header -column "$DB" < queries/ams_service_chain.sql
-[[ -f queries/pms_service_chain.sql ]] && sqlite3 -header -column "$DB" < queries/pms_service_chain.sql
-echo "Workspace coverage:"
-python - <<'PY'
+
+cd "$PROJECT_ROOT"
+source "$PROJECT_ROOT/.venv/bin/activate"
+export PYTHONPATH="$PROJECT_ROOT"
+
+mkdir -p "$PROJECT_ROOT/data"
+exec 9>"$PROJECT_ROOT/data/.rebuild.lock"
+flock -n 9 || die "another rebuild is already running"
+
+python -m workspace.build_publish recover \
+    --data-root "$PROJECT_ROOT/data"
+
+if [[ "$MODE" == "discover" || "$MODE" == "plan" ]]; then
+    python -m workspace.cli \
+        --config "$SOURCE_CONFIG" \
+        --registry "$REGISTRY" \
+        --out-dir "$PROJECT_ROOT/data/workspace" \
+        "${STRICT[@]}"
+    exit 0
+fi
+
+STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+STAGING=""
+PUBLISHED=0
+
+cleanup_failed_batch() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ "$PUBLISHED" -eq 0 && -n "$STAGING" && -d "$STAGING" ]]; then
+        if [[ "$KEEP_FAILED" -eq 1 ]]; then
+            python -m workspace.build_publish fail \
+                --staging "$STAGING" \
+                --keep || true
+        else
+            python -m workspace.build_publish fail \
+                --staging "$STAGING" || true
+        fi
+    fi
+    exit "$status"
+}
+
+trap cleanup_failed_batch EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+STAGING="$(
+    python -m workspace.build_publish begin \
+        --data-root "$PROJECT_ROOT/data"
+)"
+STAGED_DB="$STAGING/android_context.db"
+STAGED_WORKSPACE="$STAGING/workspace"
+STAGED_RAW="$STAGING/raw"
+PLAN="$STAGED_WORKSPACE/execution-plan.json"
+
+python -m workspace.cli \
+    --config "$SOURCE_CONFIG" \
+    --registry "$REGISTRY" \
+    --out-dir "$STAGED_WORKSPACE" \
+    "${STRICT[@]}"
+
+sqlite3 "$STAGED_DB" < "$PROJECT_ROOT/storage/schema.sql"
+
+python -m workspace.pipeline java \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --ctags-dir "$STAGED_RAW/ctags"
+
+python -m workspace.multi_aidl \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --report "$STAGED_RAW/aidl/aidl-binder-report.json"
+
+python -m workspace.pipeline inheritance \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --ctags-dir "$STAGED_RAW/ctags" \
+    --report-dir "$STAGED_RAW/inheritance"
+
+python -m workspace.multi_service \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --report "$STAGED_RAW/service/service-registration-report.json"
+
+python -m workspace.pipeline annotate \
+    --plan "$PLAN" \
+    --db "$STAGED_DB"
+
+FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
+if [[ -n "$FK_ERRORS" ]]; then
+    printf '%s\n' "$FK_ERRORS" >&2
+    die "foreign_key_check failed"
+fi
+printf 'foreign_key_check: PASS\n'
+
+LOCAL_SERVICE_COUNT="$(
+    sqlite3 "$STAGED_DB" \
+        "SELECT COUNT(*) FROM edge WHERE edge_type='EXPOSED_AS_LOCAL_SERVICE';"
+)"
+[[ "$LOCAL_SERVICE_COUNT" -ge 1 ]] || die "LocalServices validation failed"
+
+[[ -f "$PROJECT_ROOT/queries/ams_service_chain.sql" ]] &&
+    sqlite3 -header -column "$STAGED_DB" \
+        < "$PROJECT_ROOT/queries/ams_service_chain.sql"
+[[ -f "$PROJECT_ROOT/queries/pms_service_chain.sql" ]] &&
+    sqlite3 -header -column "$STAGED_DB" \
+        < "$PROJECT_ROOT/queries/pms_service_chain.sql"
+
+VERIFIED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+python -m workspace.build_publish prepare \
+    --staging "$STAGING" \
+    --source-config "$SOURCE_CONFIG" \
+    --started-at "$STARTED_AT" \
+    --verified-at "$VERIFIED_AT"
+
+python -m workspace.build_publish publish \
+    --staging "$STAGING"
+
+PUBLISHED=1
+trap - EXIT INT TERM
+
+printf 'Workspace coverage:\n'
+python - "$PROJECT_ROOT/data/workspace/capability-report.json" <<'PY'
 import json
+import sys
 from collections import Counter
 from pathlib import Path
-items=json.loads(Path('data/workspace/capability-report.json').read_text())
-for key,value in sorted(Counter(x['status'] for x in items).items()): print(f'  {key}: {value}')
+
+items = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for key, value in sorted(Counter(item["status"] for item in items).items()):
+    print(f"  {key}: {value}")
 PY
-SH
+SH_REBUILD
 chmod +x scripts/rebuild_all.sh
 
 cat > queries/workspace_coverage_summary.sql <<'SQL'
@@ -994,6 +2326,11 @@ fi
 log "Syntax checking canonical scripts"
 bash -n scripts/rebuild_all.sh
 python -m py_compile workspace/*.py
+
+log "Running atomic publisher and rebuild integration tests"
+python -m pytest -q \
+    tests/unit/test_build_publish.py \
+    tests/integration/test_atomic_rebuild.py
 
 log "Running full multi-repository rebuild"
 ./scripts/rebuild_all.sh
