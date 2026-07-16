@@ -2351,6 +2351,26 @@ Repository discovery, language inventory, parser coverage and graph execution ar
 ```
 
 Java Symbol, AIDL/Binder, Java Inheritance and Java Service Registration support multiple enabled repositories. Kotlin, C/C++, Rust and HIDL are inventoried and reported as unsupported until a capability-specific parser is registered.
+
+## Atomic Database Rebuild v0.1
+
+The canonical rebuild creates one verified batch under `data/staging/<build-id>`
+and atomically replaces `data/android_context.db` only after all reports and
+validation gates pass. A pre-commit failure preserves the previous live batch.
+
+```bash
+./scripts/rebuild_all.sh
+./scripts/rebuild_all.sh --keep-failed-db
+
+sqlite3 data/android_context.db \
+  "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD';"
+jq -r '.build_id' data/workspace/build-manifest.json
+```
+
+Failed batches are deleted by default or retained under `data/staging` with
+`--keep-failed-db`. Interrupted publication is recovered automatically on the
+next invocation. Concurrent rebuild, discover-only, and plan-only operations
+are rejected through `data/.rebuild.lock`.
 EOF
 cat >> INSTALLATION_MANIFEST.txt <<'EOF'
 
@@ -2360,7 +2380,18 @@ Multi-Repository Source Configuration v0.1
   config/parser_registry.toml
   tests/unit/test_workspace_v01.py
   queries/workspace_coverage_summary.sql
+  workspace/build_publish.py
+  tests/unit/test_build_publish.py
+  tests/integration/test_atomic_rebuild.py
   scripts/rebuild_all.sh
+
+Atomic Database Rebuild v0.1
+  Complete batches stage under data/staging/<build-id>.
+  Database replacement is the final publication commit point.
+  --keep-failed-db retains failed batches for diagnosis.
+  Publication recovery uses data/.publish-journal.json.
+  All canonical modes share data/.rebuild.lock.
+  No additional root installer script is required.
 EOF
 
 log "Multi-Repository Source Configuration v0.1 completed"

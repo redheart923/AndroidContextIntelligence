@@ -1,16 +1,29 @@
-Installed: 2026-07-16T12:09:03+08:00
-Mode: --fresh
-AOSP_ROOT: /home/ts/aosp
-PROJECT_ROOT: /home/ts/android-context-intelligence
-Database: /home/ts/android-context-intelligence/data/android_context.db
+Android Context Intelligence generated project
 
 Canonical entry point:
-  /home/ts/android-context-intelligence/scripts/rebuild_all.sh
+  scripts/rebuild_all.sh
 
-Generated layers:
+Installed graph layers:
   Java Symbol Graph v0.2.2
   AIDL/Binder Graph v0.1
-
-Next:
   Java Inheritance Graph v0.1
   System Service Registration Graph v0.1
+  Multi-Repository Source Configuration v0.1
+
+Atomic Database Rebuild v0.1:
+  workspace/build_publish.py
+  tests/unit/test_build_publish.py
+  tests/integration/test_atomic_rebuild.py
+  scripts/rebuild_all.sh
+
+Publication behavior:
+  Complete batches are built under data/staging/<build-id>.
+  SQLite database replacement is the final commit point.
+  Pre-commit failures preserve the last verified live batch.
+  --keep-failed-db retains a failed batch for diagnosis.
+  data/.publish-journal.json supports idempotent interruption recovery.
+  data/.rebuild.lock serializes rebuild, discover-only, and plan-only modes.
+
+Clean installation still uses the five root shell scripts. Atomic rebuild
+support is embedded in install_multi_repository_source_configuration_v01.sh;
+there is no sixth installer.
