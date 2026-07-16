@@ -1,5 +1,7 @@
 # Android Context Intelligence
 
+项目架构、设计和实施计划索引见 [doc/README.md](doc/README.md)。
+
 ## 当前版本状态
 
 Multi-Repository Source Configuration v0.1 已完成实现和最终审计：完整测试套件 24 项通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过，能力报告字段和未实现占位符检查均通过。

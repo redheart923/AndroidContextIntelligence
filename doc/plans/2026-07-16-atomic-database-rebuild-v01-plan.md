@@ -815,7 +815,7 @@ git commit -m "docs: explain atomic graph rebuild operations"
 ### Task 7: Verify clean upgrade and failure safety in WSL
 
 **Files:**
-- Modify after evidence: `2026-07-16-atomic-database-rebuild-v01-plan.md`
+- Modify after evidence: `doc/plans/2026-07-16-atomic-database-rebuild-v01-plan.md`
 
 **Interfaces:**
 - Uses the final self-contained `install_multi_repository_source_configuration_v01.sh`.
@@ -889,7 +889,7 @@ Expected: all tests pass and the placeholder scan has no implementation gaps.
 Update the status and checked steps in this plan using the actual command output, then commit:
 
 ```bash
-git add 2026-07-16-atomic-database-rebuild-v01-plan.md
+git add doc/plans/2026-07-16-atomic-database-rebuild-v01-plan.md
 git commit -m "docs: complete atomic database rebuild v0.1"
 ```
 
