@@ -1,0 +1,16 @@
+Installed: 2026-07-16T12:09:03+08:00
+Mode: --fresh
+AOSP_ROOT: /home/ts/aosp
+PROJECT_ROOT: /home/ts/android-context-intelligence
+Database: /home/ts/android-context-intelligence/data/android_context.db
+
+Canonical entry point:
+  /home/ts/android-context-intelligence/scripts/rebuild_all.sh
+
+Generated layers:
+  Java Symbol Graph v0.2.2
+  AIDL/Binder Graph v0.1
+
+Next:
+  Java Inheritance Graph v0.1
+  System Service Registration Graph v0.1

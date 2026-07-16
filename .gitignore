@@ -1,0 +1,27 @@
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Generated graph data and reports
+data/
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+
+# Local archives and transient backups
+*.tar
+*.tar.gz
+*.zip
+*.backup.*
+*.bak
+*.bak.*
+
+# IDE and OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
