@@ -109,6 +109,10 @@ __pycache__/
 data/raw/
 data/*.db
 data/*.db-*
+data/staging/
+data/rollback/
+data/.publish-journal.json
+data/.rebuild.lock
 EOF
 
 cat > "$PROJECT_ROOT/configs/local.yaml" <<EOF
@@ -1735,4 +1739,3 @@ For a completely clean recreation:
 
 Old patch scripts are no longer part of the canonical workflow.
 EOF
-

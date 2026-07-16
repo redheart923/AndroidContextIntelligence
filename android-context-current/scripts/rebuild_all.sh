@@ -1,203 +1,198 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-AOSP_ROOT="${AOSP_ROOT:-/home/ts/aosp}"
-PROJECT_ROOT="${PROJECT_ROOT:-/home/ts/android-context-intelligence}"
-FW_BASE="$AOSP_ROOT/frameworks/base"
-DB_PATH="$PROJECT_ROOT/data/android_context.db"
-CTAGS_OUTPUT="$PROJECT_ROOT/data/raw/ctags/frameworks-base.jsonl"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.toml"
+REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
+MODE="rebuild"
+KEEP_FAILED=0
+STRICT=()
 
-log() {
-    printf '\n[%s] %s\n' "$(date '+%F %T')" "$*"
+usage() {
+    cat <<'EOF'
+Usage: rebuild_all.sh [OPTIONS]
+
+Options:
+  --source-config FILE        Use an alternate source-roots configuration.
+  --discover-only             Refresh workspace discovery reports only.
+  --plan-only                 Refresh the execution plan only.
+  --strict                    Fail on every unsupported detected capability.
+  --strict-capability NAME    Fail when NAME lacks parser coverage.
+  --keep-failed-db            Retain the complete failed staging batch.
+  -h, --help                  Show this help.
+EOF
 }
 
 die() {
-    printf '\n[ERROR] %s\n' "$*" >&2
+    printf 'ERROR: %s\n' "$*" >&2
     exit 1
 }
 
-trap 'die "failed at line $LINENO"' ERR
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --source-config)
+            [[ $# -ge 2 ]] || die "--source-config requires a path"
+            SOURCE_CONFIG="$2"
+            shift 2
+            ;;
+        --discover-only)
+            MODE="discover"
+            shift
+            ;;
+        --plan-only)
+            MODE="plan"
+            shift
+            ;;
+        --strict)
+            STRICT+=(--strict)
+            shift
+            ;;
+        --strict-capability)
+            [[ $# -ge 2 ]] || die "--strict-capability requires a name"
+            STRICT+=(--strict-capability "$2")
+            shift 2
+            ;;
+        --keep-failed-db)
+            KEEP_FAILED=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+done
 
 cd "$PROJECT_ROOT"
 source "$PROJECT_ROOT/.venv/bin/activate"
 export PYTHONPATH="$PROJECT_ROOT"
 
-scan_paths=(
-    "$FW_BASE/core"
-    "$FW_BASE/services"
-)
-[[ -d "$FW_BASE/packages" ]] && scan_paths+=("$FW_BASE/packages")
+mkdir -p "$PROJECT_ROOT/data"
+exec 9>"$PROJECT_ROOT/data/.rebuild.lock"
+flock -n 9 || die "another rebuild is already running"
 
-log "Running unit tests"
-pytest -q
+python -m workspace.build_publish recover \
+    --data-root "$PROJECT_ROOT/data"
 
-log "Collecting Universal Ctags JSON"
-rm -f "$CTAGS_OUTPUT"
-ctags \
-    --languages=Java \
-    --output-format=json \
-    --fields=+nKSEi \
-    -R \
-    -f "$CTAGS_OUTPUT" \
-    "${scan_paths[@]}"
+if [[ "$MODE" == "discover" || "$MODE" == "plan" ]]; then
+    python -m workspace.cli \
+        --config "$SOURCE_CONFIG" \
+        --registry "$REGISTRY" \
+        --out-dir "$PROJECT_ROOT/data/workspace" \
+        "${STRICT[@]}"
+    exit 0
+fi
 
-log "Collecting raw service, permission, AIDL, and build facts"
-rg --json \
-    'ServiceManager\.addService|publishBinderService|LocalServices\.addService' \
-    "$FW_BASE/services" \
-    > "$PROJECT_ROOT/data/raw/service/registrations.jsonl" || true
+STARTED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+STAGING=""
+PUBLISHED=0
 
-rg --json \
-    'enforceCallingPermission|checkCallingPermission|checkCallingOrSelfPermission|enforceCallingOrSelfPermission|enforcePermission|checkPermission|Manifest\.permission\.[A-Z0-9_]+' \
-    "$FW_BASE/services" \
-    > "$PROJECT_ROOT/data/raw/permission/checks.jsonl" || true
+cleanup_failed_batch() {
+    local status=$?
+    trap - EXIT INT TERM
+    if [[ "$PUBLISHED" -eq 0 && -n "$STAGING" && -d "$STAGING" ]]; then
+        if [[ "$KEEP_FAILED" -eq 1 ]]; then
+            python -m workspace.build_publish fail \
+                --staging "$STAGING" \
+                --keep || true
+        else
+            python -m workspace.build_publish fail \
+                --staging "$STAGING" || true
+        fi
+    fi
+    exit "$status"
+}
 
-find "$FW_BASE" -type f -name '*.aidl' -print0 |
-    sort -z |
-    xargs -0 -r sha256sum \
-    > "$PROJECT_ROOT/data/raw/aidl/files.sha256"
+trap cleanup_failed_batch EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-find "$FW_BASE" -type f -name 'Android.bp' -print0 |
-    sort -z |
-    xargs -0 -r sha256sum \
-    > "$PROJECT_ROOT/data/raw/build/android-bp.sha256"
+STAGING="$(
+    python -m workspace.build_publish begin \
+        --data-root "$PROJECT_ROOT/data"
+)"
+STAGED_DB="$STAGING/android_context.db"
+STAGED_WORKSPACE="$STAGING/workspace"
+STAGED_RAW="$STAGING/raw"
+PLAN="$STAGED_WORKSPACE/execution-plan.json"
 
-log "Resetting SQLite database"
-rm -f "$DB_PATH" "$DB_PATH-wal" "$DB_PATH-shm"
-sqlite3 "$DB_PATH" < "$PROJECT_ROOT/storage/schema.sql"
+python -m workspace.cli \
+    --config "$SOURCE_CONFIG" \
+    --registry "$REGISTRY" \
+    --out-dir "$STAGED_WORKSPACE" \
+    "${STRICT[@]}"
 
-log "Importing Java Symbol Graph"
-python -m collectors.source.ctags_importer \
-    "$CTAGS_OUTPUT" \
-    "$DB_PATH" \
-    "$AOSP_ROOT"
+sqlite3 "$STAGED_DB" < "$PROJECT_ROOT/storage/schema.sql"
 
-log "Importing AIDL/Binder Graph"
-python -m collectors.binder.aidl_binder_importer \
-    --frameworks-base "$FW_BASE" \
-    --source-root "$AOSP_ROOT" \
-    --db "$DB_PATH" \
-    --raw-report \
-    "$PROJECT_ROOT/data/raw/aidl/aidl-binder-report.json"
+python -m workspace.pipeline java \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --ctags-dir "$STAGED_RAW/ctags"
 
-log "Importing Java Inheritance Graph"
-python -m collectors.source.java_inheritance_importer \
-    --ctags-jsonl "$CTAGS_OUTPUT" \
-    --source-root "$AOSP_ROOT" \
-    --db "$DB_PATH" \
-    --report \
-    "$PROJECT_ROOT/data/raw/inheritance/java-inheritance-report.json"
+python -m workspace.multi_aidl \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --report "$STAGED_RAW/aidl/aidl-binder-report.json"
 
-log "Importing System Service Registration Graph"
-python -m collectors.service.service_registration_importer \
-    --frameworks-base "$FW_BASE" \
-    --source-root "$AOSP_ROOT" \
-    --db "$DB_PATH" \
-    --report \
-    "$PROJECT_ROOT/data/raw/service/service-registration-report.json"
+python -m workspace.pipeline inheritance \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --ctags-dir "$STAGED_RAW/ctags" \
+    --report-dir "$STAGED_RAW/inheritance"
 
-log "Validating foreign keys"
-FK_ERRORS="$(sqlite3 "$DB_PATH" 'PRAGMA foreign_key_check;')"
+python -m workspace.multi_service \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --report "$STAGED_RAW/service/service-registration-report.json"
+
+python -m workspace.pipeline annotate \
+    --plan "$PLAN" \
+    --db "$STAGED_DB"
+
+FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
 if [[ -n "$FK_ERRORS" ]]; then
-    printf '%s\n' "$FK_ERRORS"
+    printf '%s\n' "$FK_ERRORS" >&2
     die "foreign_key_check failed"
 fi
-echo "foreign_key_check: PASS"
+printf 'foreign_key_check: PASS\n'
 
-log "Validating ActivityManagerService symbol"
-AMS_CLASS="$(
-    sqlite3 "$DB_PATH" "
-    SELECT COUNT(*)
-    FROM node
-    WHERE node_type='JAVA_CLASS'
-      AND qualified_name=
-          'com.android.server.am.ActivityManagerService';
-    "
+LOCAL_SERVICE_COUNT="$(
+    sqlite3 "$STAGED_DB" \
+        "SELECT COUNT(*) FROM edge WHERE edge_type='EXPOSED_AS_LOCAL_SERVICE';"
 )"
-[[ "$AMS_CLASS" == "1" ]] ||
-    die "ActivityManagerService class validation failed"
+[[ "$LOCAL_SERVICE_COUNT" -ge 1 ]] || die "LocalServices validation failed"
 
-log "Validating AMS Binder relation"
-AMS_BINDER="$(
-    sqlite3 "$DB_PATH" "
-    SELECT COUNT(*)
-    FROM edge e
-    JOIN node impl ON impl.node_id=e.from_node_id
-    JOIN node aidl ON aidl.node_id=e.to_node_id
-    WHERE e.edge_type='IMPLEMENTS_BINDER'
-      AND impl.qualified_name=
-          'com.android.server.am.ActivityManagerService'
-      AND aidl.qualified_name=
-          'android.app.IActivityManager';
-    "
-)"
-[[ "$AMS_BINDER" -ge 1 ]] ||
-    die "AMS -> IActivityManager validation failed"
+[[ -f "$PROJECT_ROOT/queries/ams_service_chain.sql" ]] &&
+    sqlite3 -header -column "$STAGED_DB" \
+        < "$PROJECT_ROOT/queries/ams_service_chain.sql"
+[[ -f "$PROJECT_ROOT/queries/pms_service_chain.sql" ]] &&
+    sqlite3 -header -column "$STAGED_DB" \
+        < "$PROJECT_ROOT/queries/pms_service_chain.sql"
 
-log "Validating PackageManager inheritance"
-PMS_INHERITANCE="$(
-    sqlite3 "$DB_PATH" "
-    SELECT COUNT(*)
-    FROM edge e
-    JOIN node child
-      ON child.node_id=e.from_node_id
-    JOIN node parent
-      ON parent.node_id=e.to_node_id
-    WHERE e.edge_type='EXTENDS'
-      AND child.qualified_name=
-          'com.android.server.pm.PackageManagerService.IPackageManagerImpl'
-      AND parent.qualified_name=
-          'com.android.server.pm.IPackageManagerBase';
-    "
-)"
-[[ "$PMS_INHERITANCE" -ge 1 ]] ||
-    die "PackageManager inheritance validation failed"
+VERIFIED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+python -m workspace.build_publish prepare \
+    --staging "$STAGING" \
+    --source-config "$SOURCE_CONFIG" \
+    --started-at "$STARTED_AT" \
+    --verified-at "$VERIFIED_AT"
 
-log "Validating core service registrations"
-ACTIVITY_SERVICE_COUNT="$(
-    sqlite3 "$DB_PATH" "
-    SELECT COUNT(*)
-    FROM edge e
-    JOIN node impl
-      ON impl.node_id=e.from_node_id
-    JOIN node service
-      ON service.node_id=e.to_node_id
-    WHERE e.edge_type='REGISTERED_AS'
-      AND service.qualified_name='activity'
-      AND impl.qualified_name=
-          'com.android.server.am.ActivityManagerService';
-    "
-)"
-[[ "$ACTIVITY_SERVICE_COUNT" -ge 1 ]] ||
-    die "Activity service registration validation failed"
+python -m workspace.build_publish publish \
+    --staging "$STAGING"
 
-PACKAGE_SERVICE_COUNT="$(
-    sqlite3 "$DB_PATH" "
-    SELECT COUNT(*)
-    FROM edge e
-    JOIN node impl
-      ON impl.node_id=e.from_node_id
-    JOIN node service
-      ON service.node_id=e.to_node_id
-    WHERE e.edge_type='REGISTERED_AS'
-      AND service.qualified_name='package'
-      AND impl.qualified_name=
-          'com.android.server.pm.PackageManagerService.IPackageManagerImpl';
-    "
-)"
-[[ "$PACKAGE_SERVICE_COUNT" -ge 1 ]] ||
-    die "Package service registration validation failed"
+PUBLISHED=1
+trap - EXIT INT TERM
 
-log "Graph summary"
-sqlite3 -header -column "$DB_PATH" \
-    < "$PROJECT_ROOT/queries/summary.sql"
+printf 'Workspace coverage:\n'
+python - "$PROJECT_ROOT/data/workspace/capability-report.json" <<'PY'
+import json
+import sys
+from collections import Counter
+from pathlib import Path
 
-log "AMS Binder relation"
-sqlite3 -header -column "$DB_PATH" \
-    < "$PROJECT_ROOT/queries/ams_binder.sql"
-
-log "Package Manager direct Binder base"
-sqlite3 -header -column "$DB_PATH" \
-    < "$PROJECT_ROOT/queries/package_manager_binder.sql"
-
-log "Rebuild completed"
+items = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for key, value in sorted(Counter(item["status"] for item in items).items()):
+    print(f"  {key}: {value}")
+PY

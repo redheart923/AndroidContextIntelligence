@@ -1,5 +1,55 @@
 # Android Context Intelligence
 
+## 原子化图谱重建 v0.1
+
+完整重建现在先在 `data/staging/<build-id>` 中生成 SQLite 数据库、
+Workspace 报告、Raw 报告和 `build-manifest.json`。只有全部解析与校验通过后，
+才会把报告发布到稳定路径，并以 SQLite 主文件替换作为最终提交点。因此解析、
+校验或提交前发布失败不会删除或覆盖上一份已验证数据库。
+
+日常重建：
+
+```bash
+cd /home/ts/android-context-intelligence
+./scripts/rebuild_all.sh
+```
+
+保留失败批次用于排查：
+
+```bash
+./scripts/rebuild_all.sh --keep-failed-db
+```
+
+保留结果位于 `data/staging/<build-id>`。默认失败处理会删除 staging，但不会删除
+最后一份已验证的 `data/android_context.db`。每次启动重建都会自动读取
+`data/.publish-journal.json` 并恢复上次中断的发布；也可以手动执行：
+
+```bash
+python -m workspace.build_publish recover --data-root data
+```
+
+所有 rebuild、discover-only 和 plan-only 模式共用 `data/.rebuild.lock`。已有任务
+持有锁时，新任务立即失败并输出：
+
+```text
+another rebuild is already running
+```
+
+发布后应核对数据库与报告中的 build ID：
+
+```bash
+sqlite3 data/android_context.db \
+  "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD';"
+
+jq -r '.build_id' data/workspace/build-manifest.json
+```
+
+两个值必须一致，且 live 数据库不应残留 `-wal` 或 `-shm` 文件。
+
+干净 AOSP/WSL 安装仍只需要工作区根目录的 5 个 `.sh` 脚本，推荐运行
+`setup_android_context_intelligence_complete_v01.sh --fresh`。不需要把
+`android-context-current` 复制到 WSL；该目录是开发快照和安装 payload 的验证基线。
+
 项目架构、设计和实施计划索引见 [doc/README.md](doc/README.md)。
 
 ## 当前版本状态
