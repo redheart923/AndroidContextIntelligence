@@ -1,0 +1,18 @@
+[workspace]
+aosp_root = "/home/ts/aosp"
+auto_discover_manifest = true
+auto_enable_discovered = false
+strict = false
+
+[defaults]
+exclude = [".git", ".repo", "out", "out_*", "target", "dist", "node_modules", "__pycache__", "tests", "test", "testing", "benchmarks"]
+
+[repositories."frameworks/base"]
+enabled = true
+include = ["core", "services", "packages"]
+
+# Enable additional repo projects here. Manifest projects are discovered but
+# intentionally disabled until explicitly enabled to avoid scanning all AOSP.
+# [repositories."packages/modules/Permission"]
+# enabled = true
+# languages = ["java", "kotlin", "aidl"]
