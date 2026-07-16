@@ -60,6 +60,7 @@ This module owns build-batch lifecycle and publication recovery. It exposes a sm
 
 ```text
 python -m workspace.build_publish begin
+python -m workspace.build_publish prepare --staging <path>
 python -m workspace.build_publish publish --staging <path>
 python -m workspace.build_publish fail --staging <path>
 python -m workspace.build_publish recover
@@ -98,7 +99,7 @@ For a normal rebuild it must:
 10. Write the staged `workspace/build-manifest.json`.
 11. Publish the batch.
 
-`--discover-only` and `--plan-only` retain their existing non-database behavior and do not create a database staging batch. They continue to update published workspace planning reports because those commands explicitly request those reports without publishing a graph database.
+`--discover-only` and `--plan-only` retain their existing non-database behavior and do not create a database staging batch. They continue to update published workspace planning reports because those commands explicitly request those reports without publishing a graph database. Because they mutate `data/workspace`, they acquire the same lock and recover any interrupted publication before writing reports. `--help` is the only mode that exits without acquiring the lock.
 
 ### `workspace/build-manifest.json`
 
@@ -144,7 +145,7 @@ If a first build fails, `data/android_context.db` remains absent. No parser may 
 
 ### Concurrent rebuild
 
-`scripts/rebuild_all.sh` uses non-blocking `flock` on `data/.rebuild.lock`. A second full rebuild exits with a clear error and does not create a staging batch.
+`scripts/rebuild_all.sh` uses non-blocking `flock` on `data/.rebuild.lock`. Any second rebuild, discover-only, or plan-only command exits with a clear error while another graph command holds the lock. This prevents planning output from racing with batch publication.
 
 ### SQLite WAL safety
 
@@ -157,6 +158,8 @@ Before publication, the publisher must:
 3. close the connection and verify that staged `-wal` and `-shm` files are absent;
 4. checkpoint the currently published database when it exists;
 5. refuse publication before moving reports if the live database remains busy or live `-wal`/`-shm` files remain.
+
+It must also verify that the staging directory build ID, the staged database `GRAPH_BUILD` ID, and `workspace/build-manifest.json` build ID are identical before moving any published artifact.
 
 The published database therefore uses the rollback-journal mode between rebuilds. Each new staged database enables WAL again through `storage/schema.sql` while it is being populated. This permits a single-file atomic commit without attaching stale WAL pages to the replacement database.
 
