@@ -705,6 +705,8 @@ jq '.[] | select(.status != "scheduled")' \
   data/workspace/capability-report.json
 ```
 
+能力报告只包含启用仓库中实际检测到的语言。例如当前启用仓库没有 `.rs` 文件时，报告中不会生成零文件的 Rust 条目。审计未支持语言时，应以 `language-inventory.json` 的实际检测结果为基准，而不是强制要求固定语言全部出现。
+
 ### 查看重复限定名
 
 ```bash

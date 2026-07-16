@@ -10,12 +10,13 @@
 
 ## Implementation Status (2026-07-16)
 
-**Status:** Core implementation and current-workspace acceptance passed. Final audit items from Task 12 remain open.
+**Status:** Core implementation and current-workspace acceptance passed. Only the installed-project placeholder scan from Task 12 remains open.
 
 Verified in WSL on `/home/ts/android-context-intelligence`:
 
 - Workspace unit tests: `6 passed`.
 - Two-repository graph integration test: `1 passed`.
+- Entire installed-project test suite: `24 passed`.
 - Non-strict planning continued with structured Kotlin coverage gaps.
 - Strict planning failed on the unsupported Kotlin fixture as expected.
 - Repo workspace discovery found 1087 projects and rebuilt the enabled repository set.
@@ -24,12 +25,9 @@ Verified in WSL on `/home/ts/android-context-intelligence`:
 - The `activity -> ActivityManagerService -> IActivityManager` chain passed.
 - The transitive `package -> IPackageManagerImpl -> IPackageManagerBase -> IPackageManager` chain passed.
 
-The following Task 12 checks still need an explicit final-audit run before this plan is archived as fully complete:
+The capability report audit found 18 valid entries with no missing fields. Unsupported entries were visible for every relevant language actually detected in the enabled repository set. Rust was not present because no Rust file was detected in the currently enabled `frameworks/base` scan; v0.1 must not manufacture a zero-file coverage entry.
 
-- run the entire project test suite with `pytest -q`;
-- validate the schema of every `capability-report.json` entry;
-- confirm unsupported Kotlin/C/C++/Rust entries are present in the generated report;
-- scan the installed project for unresolved implementation placeholders.
+The installed project still needs one final scan for unresolved implementation placeholders before this plan is archived as fully complete.
 
 Post-v0.1 hardening is tracked separately and is not a blocker for the functional acceptance above: staged/atomic database replacement, a single final rebuild during clean installation, and lossless provenance for duplicate qualified names.
 
@@ -273,12 +271,12 @@ python -m collectors.source.<java_importer>   --workspace-plan data/workspace/ex
 
 ### Task 12: Final verification
 
-- [ ] Run `pytest -q`; expect all tests PASS.
-- [ ] Run `./scripts/rebuild_all.sh`; expect all graph validations PASS.
-- [ ] Inspect `data/workspace/capability-report.json` and verify every entry contains repository, language, capability, parser, status, and file count.
-- [ ] Verify unsupported Kotlin/C/C++/Rust entries are visible.
-- [ ] Verify `./scripts/rebuild_all.sh --plan-only --strict` fails on an unsupported-language fixture.
-- [ ] Verify `sqlite3 data/android_context.db "PRAGMA foreign_key_check;"` produces no output.
+- [x] Run `pytest -q`; all 24 tests passed.
+- [x] Run `./scripts/rebuild_all.sh`; all graph validations passed.
+- [x] Inspect `data/workspace/capability-report.json`; all 18 entries contain repository, language, capability, parser, status, and file count.
+- [x] Verify unsupported Kotlin/C/C++/Rust entries are visible when the corresponding language is detected. Kotlin, C, and C++ were detected and reported; Rust was not detected in the enabled repository set.
+- [x] Verify strict planning fails on an unsupported-language fixture.
+- [x] Verify the canonical rebuild reports `foreign_key_check: PASS`.
 - [ ] Search for unresolved placeholders:
 ```bash
 grep -RInE 'TBD|TODO|implement later'   workspace config scripts collectors tests README.md
