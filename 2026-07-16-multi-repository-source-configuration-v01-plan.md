@@ -8,6 +8,31 @@
 
 **Tech Stack:** Python 3.11+ standard library, Bash, Universal Ctags JSON, SQLite, pytest.
 
+## Implementation Status (2026-07-16)
+
+**Status:** Core implementation and current-workspace acceptance passed. Final audit items from Task 12 remain open.
+
+Verified in WSL on `/home/ts/android-context-intelligence`:
+
+- Workspace unit tests: `6 passed`.
+- Two-repository graph integration test: `1 passed`.
+- Non-strict planning continued with structured Kotlin coverage gaps.
+- Strict planning failed on the unsupported Kotlin fixture as expected.
+- Repo workspace discovery found 1087 projects and rebuilt the enabled repository set.
+- Java Symbol, AIDL/Binder, Java Inheritance, and Service Registration layers completed.
+- `PRAGMA foreign_key_check` passed.
+- The `activity -> ActivityManagerService -> IActivityManager` chain passed.
+- The transitive `package -> IPackageManagerImpl -> IPackageManagerBase -> IPackageManager` chain passed.
+
+The following Task 12 checks still need an explicit final-audit run before this plan is archived as fully complete:
+
+- run the entire project test suite with `pytest -q`;
+- validate the schema of every `capability-report.json` entry;
+- confirm unsupported Kotlin/C/C++/Rust entries are present in the generated report;
+- scan the installed project for unresolved implementation placeholders.
+
+Post-v0.1 hardening is tracked separately and is not a blocker for the functional acceptance above: staged/atomic database replacement, a single final rebuild during clean installation, and lossless provenance for duplicate qualified names.
+
 ## Global Constraints
 
 - Default AOSP root: `/home/ts/aosp`.

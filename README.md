@@ -1,5 +1,13 @@
 # Android Context Intelligence
 
+## 当前版本状态
+
+Multi-Repository Source Configuration v0.1 已在现有 WSL 工程完成核心验收：6 个工作区单元测试和 1 个双仓库集成测试通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过。
+
+该版本已经可以用于配置和扫描多个 Java/AIDL 仓库。Kotlin、C/C++、Rust、HIDL 等语言会被检测并写入能力报告；没有对应语义解析器时不会被误报为已覆盖。
+
+在进入 Permission Enforcement Graph v0.1 前，建议先完成三项工程加固：原子数据库替换、干净安装只执行一次最终重建，以及重复 qualified name 的无损来源记录。
+
 Android Context Intelligence 用确定性程序分析手段，把 AOSP 源码转换为可查询的 Android 系统上下文图谱。当前版本不依赖大模型生成事实，重点覆盖 Java 符号、AIDL/Binder、Java 继承关系、System Service 注册关系，以及多仓库发现和解析器能力报告。
 
 项目的长期目标是为 Android-specific Context Graph、Context Expander、CTS/XTS 根因分析和 Agent Loop Engine 提供可信的事实层。
