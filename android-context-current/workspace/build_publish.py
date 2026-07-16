@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import secrets
@@ -8,6 +9,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from graph.writer import GraphWriter, Node
 
@@ -207,3 +209,273 @@ def ensure_live_database_quiescent(database: Path) -> None:
         if "connection" in locals():
             connection.close()
     _assert_no_sidecars(database)
+
+
+def _fsync_directory(directory: Path) -> None:
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_publication_journal(batch: BuildBatch, phase: str) -> None:
+    payload = {
+        "build_id": batch.build_id,
+        "staging_root": str(batch.staging_root),
+        "rollback_root": str(batch.rollback_root),
+        "phase": phase,
+    }
+    batch.journal.parent.mkdir(parents=True, exist_ok=True)
+    temporary = batch.journal.with_name(
+        f"{batch.journal.name}.tmp-{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    try:
+        with temporary.open("x", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, batch.journal)
+        _fsync_directory(batch.journal.parent)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
+def _read_verified_manifest_build_id(batch: BuildBatch) -> str | None:
+    manifest = batch.workspace / "build-manifest.json"
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if payload.get("status") != "verified":
+        return None
+    identity = payload.get("build_id")
+    return str(identity) if identity is not None else None
+
+
+def _validate_batch_identity(batch: BuildBatch) -> None:
+    database_build_id = read_graph_build_id(batch.database)
+    manifest_build_id = _read_verified_manifest_build_id(batch)
+    if database_build_id != batch.build_id or manifest_build_id != batch.build_id:
+        raise PublicationError(
+            "build identity mismatch: "
+            f"expected {batch.build_id!r}, database={database_build_id!r}, "
+            f"manifest={manifest_build_id!r}"
+        )
+
+
+def _restore_precommit_reports(
+    batch: BuildBatch,
+    published_names: set[str],
+    backed_up_names: set[str],
+) -> None:
+    batch.staging_root.mkdir(parents=True, exist_ok=True)
+    for name in published_names:
+        live = batch.data_root / name
+        staged = batch.staging_root / name
+        if live.exists():
+            if staged.exists():
+                raise PublicationError(
+                    f"cannot restore staged {name}: destination already exists"
+                )
+            os.replace(live, staged)
+    for name in backed_up_names:
+        backup = batch.rollback_root / name
+        live = batch.data_root / name
+        if backup.exists():
+            if live.exists():
+                raise PublicationError(
+                    f"cannot restore live {name}: destination already exists"
+                )
+            os.replace(backup, live)
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+
+
+def publish_build(
+    batch: BuildBatch,
+    *,
+    replace_database: Callable[[Path, Path], None] = os.replace,
+) -> None:
+    _validate_batch_identity(batch)
+    _assert_no_sidecars(batch.database)
+    ensure_live_database_quiescent(batch.data_root / "android_context.db")
+    if batch.journal.exists():
+        raise PublicationError(
+            f"publication journal already exists: {batch.journal}; recover first"
+        )
+
+    backed_up_names: set[str] = set()
+    published_names: set[str] = set()
+    database_committed = False
+    _write_publication_journal(batch, "prepared")
+    try:
+        batch.rollback_root.mkdir(parents=True, exist_ok=False)
+        for name in ("workspace", "raw"):
+            live = batch.data_root / name
+            if live.exists():
+                os.replace(live, batch.rollback_root / name)
+                backed_up_names.add(name)
+        _write_publication_journal(batch, "old_reports_backed_up")
+
+        for name in ("workspace", "raw"):
+            staged = batch.staging_root / name
+            if not staged.is_dir():
+                raise PublicationError(f"staged report directory is missing: {staged}")
+            os.replace(staged, batch.data_root / name)
+            published_names.add(name)
+        _write_publication_journal(batch, "new_reports_published")
+
+        replace_database(batch.database, batch.data_root / "android_context.db")
+        database_committed = True
+        _write_publication_journal(batch, "database_committed")
+    except BaseException:
+        if not database_committed:
+            _restore_precommit_reports(batch, published_names, backed_up_names)
+            if batch.journal.exists():
+                batch.journal.unlink()
+                _fsync_directory(batch.journal.parent)
+        raise
+
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+    if batch.staging_root.exists():
+        shutil.rmtree(batch.staging_root)
+    if batch.journal.exists():
+        batch.journal.unlink()
+        _fsync_directory(batch.journal.parent)
+
+
+def _load_journal_batch(data_root: Path, payload: dict[str, object]) -> BuildBatch:
+    identity = _validate_build_id(str(payload.get("build_id", "")))
+    batch = _batch_from_parts(data_root, identity)
+    try:
+        staging = Path(str(payload["staging_root"])).resolve()
+        rollback = Path(str(payload["rollback_root"])).resolve()
+    except (KeyError, OSError) as error:
+        raise PublicationError("invalid publication journal paths") from error
+    if staging != batch.staging_root.resolve() or rollback != batch.rollback_root.resolve():
+        raise PublicationError("publication journal paths do not match build identity")
+    return batch
+
+
+def recover_publication(data_root: Path) -> str:
+    resolved_root = data_root.resolve()
+    journal = resolved_root / ".publish-journal.json"
+    if not journal.exists():
+        return "no_journal"
+    try:
+        payload = json.loads(journal.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PublicationError(f"invalid publication journal: {journal}") from error
+    if not isinstance(payload, dict):
+        raise PublicationError(f"invalid publication journal: {journal}")
+    batch = _load_journal_batch(resolved_root, payload)
+
+    live_database = resolved_root / "android_context.db"
+    if read_graph_build_id(live_database) == batch.build_id:
+        if batch.rollback_root.exists():
+            shutil.rmtree(batch.rollback_root)
+        if batch.staging_root.exists():
+            shutil.rmtree(batch.staging_root)
+        journal.unlink()
+        _fsync_directory(journal.parent)
+        return "committed"
+
+    batch.staging_root.mkdir(parents=True, exist_ok=True)
+    for name in ("workspace", "raw"):
+        live = resolved_root / name
+        staged = batch.staging_root / name
+        backup = batch.rollback_root / name
+        if live.exists() and not staged.exists():
+            os.replace(live, staged)
+        if backup.exists():
+            if live.exists():
+                raise PublicationError(
+                    f"cannot recover {name}: live and rollback paths both exist"
+                )
+            os.replace(backup, live)
+    if batch.rollback_root.exists():
+        shutil.rmtree(batch.rollback_root)
+    journal.unlink()
+    _fsync_directory(journal.parent)
+    return "rolled_back"
+
+
+def _build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Publish verified graph build batches")
+    commands = parser.add_subparsers(dest="command", required=True)
+
+    begin = commands.add_parser("begin", help="create a staged build batch")
+    begin.add_argument("--data-root", type=Path, required=True)
+
+    prepare = commands.add_parser("prepare", help="identify and prepare a batch")
+    prepare.add_argument("--staging", type=Path, required=True)
+    prepare.add_argument("--source-config", type=Path, required=True)
+    prepare.add_argument("--started-at", required=True)
+    prepare.add_argument("--verified-at", required=True)
+
+    publish = commands.add_parser("publish", help="publish a verified batch")
+    publish.add_argument("--staging", type=Path, required=True)
+
+    fail = commands.add_parser("fail", help="clean up or retain a failed batch")
+    fail.add_argument("--staging", type=Path, required=True)
+    fail.add_argument("--keep", action="store_true")
+
+    recover = commands.add_parser("recover", help="recover interrupted publication")
+    recover.add_argument("--data-root", type=Path, required=True)
+    return parser
+
+
+def main(argument_vector: list[str] | None = None) -> int:
+    arguments = _build_argument_parser().parse_args(argument_vector)
+    if arguments.command == "begin":
+        print(begin_build(arguments.data_root).staging_root.resolve())
+        return 0
+    if arguments.command == "prepare":
+        batch = load_build_batch(arguments.staging)
+        record_graph_build(
+            batch,
+            arguments.source_config,
+            arguments.started_at,
+            arguments.verified_at,
+        )
+        write_build_manifest(
+            batch,
+            arguments.source_config,
+            arguments.started_at,
+            arguments.verified_at,
+        )
+        prepare_staged_database(batch.database)
+        return 0
+    if arguments.command == "publish":
+        publish_build(load_build_batch(arguments.staging))
+        return 0
+    if arguments.command == "fail":
+        retained = cleanup_failed_build(
+            load_build_batch(arguments.staging),
+            keep=arguments.keep,
+        )
+        if retained is not None:
+            print(retained)
+        return 0
+    if arguments.command == "recover":
+        print(recover_publication(arguments.data_root))
+        return 0
+    raise AssertionError(f"unhandled command: {arguments.command}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
