@@ -94,8 +94,9 @@ For a normal rebuild it must:
 6. Initialize and populate the staged SQLite database.
 7. Write every raw report inside the staging batch.
 8. Run all staged validation queries.
-9. Write the staged `workspace/build-manifest.json`.
-10. Publish the batch.
+9. Checkpoint the staged SQLite WAL, switch it to `journal_mode=DELETE`, and verify that no staged `-wal` or `-shm` sidecar remains.
+10. Write the staged `workspace/build-manifest.json`.
+11. Publish the batch.
 
 `--discover-only` and `--plan-only` retain their existing non-database behavior and do not create a database staging batch. They continue to update published workspace planning reports because those commands explicitly request those reports without publishing a graph database.
 
@@ -145,6 +146,20 @@ If a first build fails, `data/android_context.db` remains absent. No parser may 
 
 `scripts/rebuild_all.sh` uses non-blocking `flock` on `data/.rebuild.lock`. A second full rebuild exits with a clear error and does not create a staging batch.
 
+### SQLite WAL safety
+
+The schema enables WAL while importers populate the staged database. A main database file must never be replaced while staged or live WAL sidecars could still contribute pages.
+
+Before publication, the publisher must:
+
+1. execute `PRAGMA wal_checkpoint(TRUNCATE)` against the staged database;
+2. execute `PRAGMA journal_mode=DELETE` against the staged database;
+3. close the connection and verify that staged `-wal` and `-shm` files are absent;
+4. checkpoint the currently published database when it exists;
+5. refuse publication before moving reports if the live database remains busy or live `-wal`/`-shm` files remain.
+
+The published database therefore uses the rollback-journal mode between rebuilds. Each new staged database enables WAL again through `storage/schema.sql` while it is being populated. This permits a single-file atomic commit without attaching stale WAL pages to the replacement database.
+
 ## Compatibility
 
 Existing consumer paths remain unchanged:
@@ -173,6 +188,8 @@ Unit tests for `workspace/build_publish.py` prove:
 - keep-failed behavior preserves staging;
 - interrupted publication recovery is idempotent;
 - a committed publication is completed rather than rolled back.
+- staged WAL content is checkpointed before publication;
+- publication is rejected without changing live artifacts when live SQLite sidecars indicate an active or uncheckpointed database.
 
 Shell integration tests prove:
 
@@ -206,6 +223,7 @@ The feature is complete only when all of the following are demonstrated:
 - a successful rebuild publishes matching build IDs in the database and manifest;
 - interrupted publication recovery is idempotent;
 - concurrent rebuild is rejected;
+- no published database is accompanied by stale `-wal` or `-shm` files;
 - the complete project test suite passes;
 - canonical foreign-key, AMS, PMS, and LocalServices validation passes;
 - a clean installation still requires only the existing five root scripts.
