@@ -115,13 +115,13 @@ from graph.writer import Edge, GraphWriter
 
 
 PACKAGE_RE = re.compile(
-    r"^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;",
+    r"^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;?",
     re.MULTILINE,
 )
 
 IMPORT_RE = re.compile(
     r"^\s*import\s+(?:static\s+)?"
-    r"([A-Za-z_][A-Za-z0-9_.$]*)(\.\*)?\s*;",
+    r"([A-Za-z_][A-Za-z0-9_$]*(?:\.[A-Za-z_][A-Za-z0-9_$]*)*)(\.\*)?\s*;?",
     re.MULTILINE,
 )
 
@@ -265,7 +265,10 @@ def load_types(
         WHERE node_type IN (
             'JAVA_CLASS',
             'JAVA_INTERFACE',
-            'JAVA_ENUM'
+            'JAVA_ENUM',
+            'KOTLIN_CLASS',
+            'KOTLIN_INTERFACE',
+            'KOTLIN_OBJECT'
         )
           AND qualified_name IS NOT NULL
           AND source_path IS NOT NULL
@@ -366,15 +369,15 @@ def edge_type_for(
     child: DbType,
     parent: DbType,
 ) -> str | None:
-    if parent.node_type == "JAVA_INTERFACE":
-        if child.node_type == "JAVA_INTERFACE":
+    interface_types = {"JAVA_INTERFACE", "KOTLIN_INTERFACE"}
+    class_types = {"JAVA_CLASS", "JAVA_ENUM", "KOTLIN_CLASS", "KOTLIN_OBJECT"}
+
+    if parent.node_type in interface_types:
+        if child.node_type in interface_types:
             return "EXTENDS"
         return "IMPLEMENTS_JAVA_INTERFACE"
 
-    if parent.node_type in {
-        "JAVA_CLASS",
-        "JAVA_ENUM",
-    }:
+    if parent.node_type in class_types:
         return "EXTENDS"
 
     return None
@@ -592,10 +595,10 @@ def main() -> int:
 
     if records_with_inherits == 0:
         print(
-            "ERROR: Ctags JSON contains no inherits field. "
-            "Regenerate with --fields=+nKSEi."
+            "WARNING: Ctags JSON contains no inherits field. "
+            "Graph will contain no inheritance edges for this pass."
         )
-        return 3
+        return 0
 
     return 0
 

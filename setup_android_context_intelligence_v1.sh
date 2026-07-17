@@ -395,6 +395,7 @@ log "Writing Java Symbol Graph importer v0.2.2"
 cat > "$PROJECT_ROOT/collectors/source/ctags_importer.py" <<'PY'
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sqlite3
@@ -416,6 +417,17 @@ KIND_MAP = {
     "annotation": "JAVA_ANNOTATION",
 }
 
+KOTLIN_KIND_MAP = {
+    "class": "KOTLIN_CLASS",
+    "interface": "KOTLIN_INTERFACE",
+    "object": "KOTLIN_OBJECT",
+    "typealias": "KOTLIN_TYPEALIAS",
+    "method": "KOTLIN_METHOD",
+    "variable": "KOTLIN_VARIABLE",
+    "constant": "KOTLIN_CONSTANT",
+    "package": "KOTLIN_PACKAGE",
+}
+
 OWNER_KIND_MAP = {
     "class": "JAVA_CLASS",
     "interface": "JAVA_INTERFACE",
@@ -423,8 +435,14 @@ OWNER_KIND_MAP = {
     "annotation": "JAVA_ANNOTATION",
 }
 
+KOTLIN_OWNER_KIND_MAP = {
+    "class": "KOTLIN_CLASS",
+    "interface": "KOTLIN_INTERFACE",
+    "object": "KOTLIN_OBJECT",
+}
+
 PACKAGE_RE = re.compile(
-    r"^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;",
+    r"^\s*package\s+([A-Za-z_][A-Za-z0-9_.]*)\s*;?",
     re.MULTILINE,
 )
 
@@ -538,7 +556,9 @@ def first_pass(
     input_path: Path,
     db_path: Path,
     source_root: Path,
+    kind_map: dict[str, str] | None = None,
 ) -> tuple[int, int]:
+    active_kind_map = kind_map if kind_map is not None else KIND_MAP
     writer = GraphWriter(db_path)
     imported = 0
     skipped = 0
@@ -546,7 +566,7 @@ def first_pass(
     try:
         for record in iter_records(input_path):
             kind = record.get("kind")
-            node_type = KIND_MAP.get(kind)
+            node_type = active_kind_map.get(kind)
             if not node_type:
                 continue
 
@@ -622,7 +642,11 @@ def second_pass(
     input_path: Path,
     db_path: Path,
     source_root: Path,
+    kind_map: dict[str, str] | None = None,
+    owner_kind_map: dict[str, str] | None = None,
 ) -> tuple[int, int]:
+    active_kind_map = kind_map if kind_map is not None else KIND_MAP
+    active_owner_kind_map = owner_kind_map if owner_kind_map is not None else OWNER_KIND_MAP
     owner_ids = collect_owner_ids(db_path)
     writer = GraphWriter(db_path)
     inserted = 0
@@ -631,10 +655,13 @@ def second_pass(
     try:
         for record in iter_records(input_path):
             kind = record.get("kind")
-            if kind not in {"method", "field", "enumConstant"}:
+            member_kinds = {"method", "field", "enumConstant"}
+            if active_kind_map is KOTLIN_KIND_MAP:
+                member_kinds = {"method", "variable", "constant"}
+            if kind not in member_kinds:
                 continue
 
-            owner_type = OWNER_KIND_MAP.get(
+            owner_type = active_owner_kind_map.get(
                 record.get("scopeKind") or ""
             )
             if not owner_type:
@@ -663,7 +690,10 @@ def second_pass(
                 missing_owner += 1
                 continue
 
-            node_type = KIND_MAP[kind]
+            node_type = active_kind_map.get(kind)
+            if not node_type:
+                missing_owner += 1
+                continue
             member_id = stable_id(node_type, qualified_name)
             relation = (
                 "HAS_METHOD"
@@ -692,30 +722,32 @@ def second_pass(
 
 
 def main() -> int:
-    if len(sys.argv) != 4:
-        print(
-            "Usage: python -m collectors.source.ctags_importer "
-            "<ctags-jsonl> <db-path> <source-root>"
-        )
-        return 2
+    parser = argparse.ArgumentParser(description="Import Ctags JSONL into SQLite graph.")
+    parser.add_argument("ctags_jsonl", type=Path)
+    parser.add_argument("db_path", type=Path)
+    parser.add_argument("source_root", type=Path)
+    parser.add_argument("--language", choices=["java", "kotlin"], default="java")
+    args = parser.parse_args()
 
-    input_path = Path(sys.argv[1])
-    db_path = Path(sys.argv[2])
-    source_root = Path(sys.argv[3])
+    kind_map = KOTLIN_KIND_MAP if args.language == "kotlin" else KIND_MAP
+    owner_kind_map = KOTLIN_OWNER_KIND_MAP if args.language == "kotlin" else OWNER_KIND_MAP
 
     imported, skipped = first_pass(
-        input_path,
-        db_path,
-        source_root,
+        args.ctags_jsonl,
+        args.db_path,
+        args.source_root,
+        kind_map=kind_map,
     )
     owner_edges, missing_owner = second_pass(
-        input_path,
-        db_path,
-        source_root,
+        args.ctags_jsonl,
+        args.db_path,
+        args.source_root,
+        kind_map=kind_map,
+        owner_kind_map=owner_kind_map,
     )
 
     print(
-        f"Imported {imported} Java symbols; "
+        f"Imported {imported} {args.language} symbols; "
         f"skipped {skipped}; "
         f"owner edges {owner_edges}; "
         f"unresolved owners {missing_owner}"
