@@ -7,7 +7,7 @@ from .models import LanguageInventory
 SUFFIXES = {".java": "java", ".aidl": "aidl", ".kt": "kotlin", ".kts": "kotlin",
             ".c": "c", ".h": "c", ".cc": "cpp", ".cpp": "cpp", ".cxx": "cpp",
             ".hpp": "cpp", ".hh": "cpp", ".rs": "rust", ".hal": "hidl",
-            ".py": "python", ".proto": "proto", ".mk": "make"}
+            ".py": "python", ".proto": "proto", ".mk": "make", ".xml": "xml"}
 
 
 def _excluded(relative: Path, patterns: tuple[str, ...]) -> bool:

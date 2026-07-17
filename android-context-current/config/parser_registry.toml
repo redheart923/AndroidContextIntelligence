@@ -9,9 +9,9 @@ enabled = true
 capabilities = ["symbols", "binder"]
 
 [parsers.kotlin]
-implementation = ""
-enabled = false
-capabilities = []
+implementation = "java_permission_scanner"
+enabled = true
+capabilities = ["permission_enforcement"]
 [parsers.c]
 implementation = ""
 enabled = false
@@ -44,3 +44,8 @@ capabilities = []
 implementation = ""
 enabled = false
 capabilities = []
+
+[parsers.xml]
+implementation = "xml_permission_importer"
+enabled = true
+capabilities = ["permission_declaration"]
