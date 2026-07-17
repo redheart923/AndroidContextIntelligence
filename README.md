@@ -810,3 +810,46 @@ sqlite3 data/android_context.db 'PRAGMA foreign_key_check;'
 ```
 
 日常不需要再次运行各个 `install_*.sh`。安装脚本只负责向干净工具工程安装能力；源码同步、分支切换和仓库配置变化后，统一运行 `scripts/rebuild_all.sh`。
+
+## 十五、更新记录与阶段里程碑 (v0.1.1)
+
+### 新增功能与用法
+1. **Kotlin 语法全量支持**
+   - **功能**：底层 ctags_importer.py 和 java_inheritance_importer.py 全面支持 Kotlin 的无分号语法、类/接口声明、对象单例 (object) 以及类型别名 (	ypealias)，并在能力检测矩阵中被正式激活。
+   - **用法**：执行 ./scripts/rebuild_all.sh 时，AOSP 和 Vendor 代码中的 .kt 文件会被全量解析进 ndroid_context.db，且不再被严格模式 (--strict) 拦截报错。
+
+2. **多源跨语言解耦容错**
+   - **功能**：解决了因 Kotlin 尚未完整支持 Ctags 的 inherits 字段而导致的继承关系解析硬中断问题。将 ERROR: Ctags JSON contains no inherits field 降级为 WARNING，使跨语言的联合建图更加丝滑和健壮。
+
+3. **厂商定制 (Vendor) 代码自动反编译与图谱融合流水线**
+   - **功能**：支持将诸如 services.jar、ramework.jar、SystemUI.apk 等高混淆、高优化的闭源厂商系统包自动反编译，并**无缝增量融合 (Shadowing & Grafting)** 到已建好图谱的 AOSP 开源基线上。它能自动生成 AOSP 节点与定制节点间的调用边、继承边和覆盖关系。
+   - **用法**：
+     1. 将 .jar 或 .apk 放入 data/raw/vendor/ 目录下。
+     2. 运行 cd /home/ts/android-context-intelligence && ./scripts/import_vendor.sh。
+     3. 脚本会自动处理 Jadx 并发反编译（自带错误忽略跳过），并使用底层共享图谱导入器完成双域节点的缝合。
+
+---
+
+## 十六、下一步行动路线图 (Next Steps)
+
+当前系统已经成功打通了【开源 AOSP 源码】+【闭源 Vendor 定制包】的静态结构大图谱。为了向最终的“大模型辅助操作系统工程系统”演进，接下来的建设重心将向**权限流转**、**上下文微观透视**及**MCP 接口**转移：
+
+### Phase 1: Permission Enforcement Graph (PEG) 权限执行图谱
+- **目标**：在已有的 Method -> Binder -> SystemService 的骨架上，注入“权限控制流”。
+- **实施路线**：
+  1. 扫描 Java AST 或反编译文本，提取对 checkPermission(), enforceCallingOrSelfPermission()，以及注解 @RequiresPermission 的调用点。
+  2. 生成 ENFORCES_PERMISSION 等新型关联边。
+  3. 实现跨方法、跨组件的权限约束传递分析。
+
+### Phase 2: Runtime & Build Context Graph (运行时与编译态拓展)
+- **目标**：解决“静态代码存在，但实际未编译或未运行”的盲区。
+- **实施路线**：
+  1. **Build Graph**：通过解析 module-info.json 或 Ninja 文件，建立源码到产物（如 ramework.jar 属于哪个 Soong Module）的映射，帮助 AI 理解编译依赖。
+  2. **Runtime Graph**：引入 ADB / Perfetto 数据，标记系统中正在 Active 的 Service 列表和真实的进程 UID，为动态 Bug 排查提供现场数据。
+
+### Phase 3: Jadx-AI-MCP 架构集成 (终极 AI 应用态)
+- **目标**：基于上述大统一 SQLite 图谱，为大语言模型（如 Claude/GPT/Gemini）提供极简的交互总线。
+- **实施路线**：
+  1. 提供一组标准 MCP (Model Context Protocol) 接口（如：ind_vendor_overrides(class_name)，	race_permission_chain(method_name)）。
+  2. AI 通过查询宏观图谱快速定位文件路径，再利用 MCP 动态读取该文件（尤其是 endor_src 中的反编译代码）的微观 AST / 逻辑流，达成“先导航，再狙击”的最佳上下文成本比。
+
