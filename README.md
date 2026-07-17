@@ -312,7 +312,7 @@ exclude = ["tests", "prebuilt", "generated"]
 | **Phase 1** | Generic Code Graph | ✅ 已完成 | Java/Kotlin Symbol 743K+、AIDL/Binder 885 接口、Inheritance 9K+ 边、Service Registration 90 服务 |
 | — | Multi-Repository | ✅ 已完成 | 1087 仓库发现、TOML 配置驱动、原子化重建 |
 | — | Vendor Customization | ✅ 已完成 | Jadx 反编译 + 增量融合，2M+ 厂商节点 |
-| **Phase 2** | Android Semantic Graph | 🔜 **下一步** | Permission Graph、Build Graph（Soong/Ninja） |
+| **Phase 2** | Android Semantic Graph | ✅ **已完成 (Phase 2a)** | Permission Graph 已经通过源码与XML提取完成构建，Build Graph 待定 |
 | **Phase 3** | Incremental Updater | 🔲 未开始 | Git Change Detector、Graph Patch、Stale 标记 |
 | **Phase 4** | Runtime / Test Graph | 🔲 未开始 | ADB/Perfetto 采集、CTS/XTS 结果解析、PASS/FAIL Diff |
 | **Phase 5** | Context Expander | 🔲 未开始 | Issue Parser → Seed Nodes → Rule-based Expansion → Problem Context Graph |
