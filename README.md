@@ -1,69 +1,5 @@
 # Android Context Intelligence
 
-## 原子化图谱重建 v0.1
-
-完整重建现在先在 `data/staging/<build-id>` 中生成 SQLite 数据库、
-Workspace 报告、Raw 报告和 `build-manifest.json`。只有全部解析与校验通过后，
-才会把报告发布到稳定路径，并以 SQLite 主文件替换作为最终提交点。因此解析、
-校验或提交前发布失败不会删除或覆盖上一份已验证数据库。
-
-日常重建：
-
-```bash
-cd /home/ts/android-context-intelligence
-./scripts/rebuild_all.sh
-```
-
-保留失败批次用于排查：
-
-```bash
-./scripts/rebuild_all.sh --keep-failed-db
-```
-
-保留结果位于 `data/staging/<build-id>`。默认失败处理会删除 staging，但不会删除
-最后一份已验证的 `data/android_context.db`。每次启动重建都会自动读取
-`data/.publish-journal.json` 并恢复上次中断的发布；也可以手动执行：
-
-```bash
-python -m workspace.build_publish recover --data-root data
-```
-
-所有 rebuild、discover-only 和 plan-only 模式共用 `data/.rebuild.lock`。已有任务
-持有锁时，新任务立即失败并输出：
-
-```text
-another rebuild is already running
-```
-
-发布后应核对数据库与报告中的 build ID：
-
-```bash
-sqlite3 data/android_context.db \
-  "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD';"
-
-jq -r '.build_id' data/workspace/build-manifest.json
-```
-
-两个值必须一致，且 live 数据库不应残留 `-wal` 或 `-shm` 文件。
-
-干净 AOSP/WSL 安装仍只需要工作区根目录的 5 个 `.sh` 脚本，推荐运行
-`setup_android_context_intelligence_complete_v01.sh --fresh`。不需要把
-`android-context-current` 复制到 WSL；该目录是开发快照和安装 payload 的验证基线。
-
-项目架构、设计和实施计划索引见 [doc/README.md](doc/README.md)。
-
-## 当前版本状态
-
-Multi-Repository Source Configuration v0.1 已完成实现和最终审计：完整测试套件 24 项通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过，能力报告字段和未实现占位符检查均通过。
-
-该版本已经可以用于配置和扫描多个 Java/AIDL 仓库。Kotlin、C/C++、Rust、HIDL 等语言会被检测并写入能力报告；没有对应语义解析器时不会被误报为已覆盖。
-
-在进入 Permission Enforcement Graph v0.1 前，建议先完成三项工程加固：原子数据库替换、干净安装只执行一次最终重建，以及重复 qualified name 的无损来源记录。
-
-Android Context Intelligence 用确定性程序分析手段，把 AOSP 源码转换为可查询的 Android 系统上下文图谱。当前版本不依赖大模型生成事实，重点覆盖 Java 符号、AIDL/Binder、Java 继承关系、System Service 注册关系，以及多仓库发现和解析器能力报告。
-
-项目的长期目标是为 Android-specific Context Graph、Context Expander、CTS/XTS 根因分析和 Agent Loop Engine 提供可信的事实层。
-
 ## 一、是否需要复制 `android-context-current`
 
 对于一份干净的 AOSP 源码，**不需要复制**：
@@ -74,17 +10,18 @@ D:\AndroidContextIntelligence\android-context-current
 
 这个目录是之前 WSL 工程的代码快照，主要用于开发和验证后续安装脚本，不是安装输入。
 
-干净安装只需要复制工作区根目录的以下 5 个脚本：
+干净安装只需要复制工作区根目录的以下 6 个脚本：
 
 ```text
 setup_android_context_intelligence_v1.sh
 install_java_inheritance_graph_v01.sh
 install_system_service_registration_graph_v01.sh
 install_multi_repository_source_configuration_v01.sh
+install_vendor_customization_graph_v01.sh
 setup_android_context_intelligence_complete_v01.sh
 ```
 
-其中推荐直接运行最后一个总入口。它会依次调用前四个脚本，在 `/home/ts/android-context-intelligence` 创建完整工程。
+其中推荐直接运行最后一个总入口。它会依次调用前五个脚本，在 `/home/ts/android-context-intelligence` 创建完整工程。
 
 `android-context-current` 仅在以下场景有用：
 
@@ -257,7 +194,7 @@ Java、AIDL、Kotlin、C、C++、Rust、HIDL、Python、Blueprint、Make、Proto
 
 当前正式语义解析能力主要覆盖 Java 和 AIDL。Kotlin、C/C++、Rust、HIDL 等语言会进入结构化能力报告，但不会被错误标记为“已完整解析”。
 
-## 三、5 个脚本分别做什么
+## 三、6 个脚本分别做什么
 
 ### `setup_android_context_intelligence_v1.sh`
 
@@ -307,9 +244,21 @@ Java、AIDL、Kotlin、C、C++、Rust、HIDL、Python、Blueprint、Make、Proto
 
 单独使用场景：前面三个阶段已经安装，需要把更多 AOSP、Mainline 或 vendor 仓库纳入图谱。
 
+
+### `install_vendor_customization_graph_v01.sh`
+
+新增闭源厂商定制图谱融合流水线：
+
+- 创建 `data/raw/vendor` 等输入目录；
+- 生成 `scripts/import_vendor.sh` 脚本；
+- 自动调用 `jadx` 进行并发反编译；
+- 将反编译后的闭源源码无缝增量融合到已有 AOSP 基线图谱中。
+
+单独使用场景：需要分析厂商闭源包（如 `services.jar`, `SystemUI.apk`），提取厂商新增或重写的特有逻辑并挂载到基线关系上。
+
 ### `setup_android_context_intelligence_complete_v01.sh`
 
-总安装入口，按顺序调用前四个脚本。
+总安装入口，按顺序调用前五个脚本。
 
 推荐用于：
 
@@ -350,7 +299,7 @@ rg --version
 
 ## 五、干净 AOSP 的完整安装
 
-### 1. 将 5 个脚本复制到 WSL
+### 1. 将 6 个脚本复制到 WSL
 
 Windows 文件位于：
 
@@ -853,3 +802,67 @@ sqlite3 data/android_context.db 'PRAGMA foreign_key_check;'
   1. 提供一组标准 MCP (Model Context Protocol) 接口（如：ind_vendor_overrides(class_name)，	race_permission_chain(method_name)）。
   2. AI 通过查询宏观图谱快速定位文件路径，再利用 MCP 动态读取该文件（尤其是 endor_src 中的反编译代码）的微观 AST / 逻辑流，达成“先导航，再狙击”的最佳上下文成本比。
 
+
+## 当前版本状态
+
+Multi-Repository Source Configuration v0.1 已完成实现和最终审计：完整测试套件 24 项通过，严格模式按预期拒绝缺少解析器的 Kotlin 能力，全量图谱重建完成，SQLite 外键检查以及 AMS、PMS Binder 链路验证通过，能力报告字段和未实现占位符检查均通过。
+
+该版本已经可以用于配置和扫描多个 Java/AIDL 仓库。Kotlin、C/C++、Rust、HIDL 等语言会被检测并写入能力报告；没有对应语义解析器时不会被误报为已覆盖。
+
+在进入 Permission Enforcement Graph v0.1 前，建议先完成三项工程加固：原子数据库替换、干净安装只执行一次最终重建，以及重复 qualified name 的无损来源记录。
+
+Android Context Intelligence 用确定性程序分析手段，把 AOSP 源码转换为可查询的 Android 系统上下文图谱。当前版本不依赖大模型生成事实，重点覆盖 Java 符号、AIDL/Binder、Java 继承关系、System Service 注册关系，以及多仓库发现和解析器能力报告。
+
+项目的长期目标是为 Android-specific Context Graph、Context Expander、CTS/XTS 根因分析和 Agent Loop Engine 提供可信的事实层。
+
+## 原子化图谱重建 v0.1
+
+完整重建现在先在 `data/staging/<build-id>` 中生成 SQLite 数据库、
+Workspace 报告、Raw 报告和 `build-manifest.json`。只有全部解析与校验通过后，
+才会把报告发布到稳定路径，并以 SQLite 主文件替换作为最终提交点。因此解析、
+校验或提交前发布失败不会删除或覆盖上一份已验证数据库。
+
+日常重建：
+
+```bash
+cd /home/ts/android-context-intelligence
+./scripts/rebuild_all.sh
+```
+
+保留失败批次用于排查：
+
+```bash
+./scripts/rebuild_all.sh --keep-failed-db
+```
+
+保留结果位于 `data/staging/<build-id>`。默认失败处理会删除 staging，但不会删除
+最后一份已验证的 `data/android_context.db`。每次启动重建都会自动读取
+`data/.publish-journal.json` 并恢复上次中断的发布；也可以手动执行：
+
+```bash
+python -m workspace.build_publish recover --data-root data
+```
+
+所有 rebuild、discover-only 和 plan-only 模式共用 `data/.rebuild.lock`。已有任务
+持有锁时，新任务立即失败并输出：
+
+```text
+another rebuild is already running
+```
+
+发布后应核对数据库与报告中的 build ID：
+
+```bash
+sqlite3 data/android_context.db \
+  "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD';"
+
+jq -r '.build_id' data/workspace/build-manifest.json
+```
+
+两个值必须一致，且 live 数据库不应残留 `-wal` 或 `-shm` 文件。
+
+干净 AOSP/WSL 安装仍只需要工作区根目录的 5 个 `.sh` 脚本，推荐运行
+`setup_android_context_intelligence_complete_v01.sh --fresh`。不需要把
+`android-context-current` 复制到 WSL；该目录是开发快照和安装 payload 的验证基线。
+
+项目架构、设计和实施计划索引见 [doc/README.md](doc/README.md)。
