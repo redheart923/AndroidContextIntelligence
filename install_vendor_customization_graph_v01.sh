@@ -78,7 +78,11 @@ python -m collectors.source.ctags_importer "$CTAGS_OUT" "$DB_PATH" "$VENDOR_SRC"
 
 # Stage 2: Extract and resolve cross-references (extends, implements)
 # This magically bridges vendor classes to existing AOSP nodes!
-python -m collectors.source.java_inheritance_importer "$CTAGS_OUT" "$DB_PATH" "$VENDOR_SRC"
+python -m collectors.source.java_inheritance_importer \
+    --ctags-jsonl "$CTAGS_OUT" \
+    --db "$DB_PATH" \
+    --source-root "$VENDOR_SRC" \
+    --report "$VENDOR_SRC/inheritance_report.json"
 
 log "Vendor Graph Integration completed successfully."
 SH
