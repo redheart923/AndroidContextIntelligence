@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLERS_DIR="$SCRIPT_DIR/installers"
 AOSP_ROOT="${AOSP_ROOT:-/home/ts/aosp}"
 PROJECT_ROOT="${PROJECT_ROOT:-/home/ts/android-context-intelligence}"
 MODE="${1:---fresh}"
@@ -15,8 +16,8 @@ case "$MODE" in
   -h|--help)
     cat <<'EOF'
 Usage:
-  ./setup_android_context_intelligence_complete_v01.sh --fresh
-  ./setup_android_context_intelligence_complete_v01.sh --rebuild
+  ./setup.sh --fresh
+  ./setup.sh --rebuild
 
 Environment:
   AOSP_ROOT=/home/ts/aosp
@@ -32,26 +33,30 @@ scripts=(
   install_java_inheritance_graph_v01.sh
   install_system_service_registration_graph_v01.sh
   install_multi_repository_source_configuration_v01.sh
+  install_vendor_customization_graph_v01.sh
 )
 
 for script in "${scripts[@]}"; do
-  [[ -f "$SCRIPT_DIR/$script" ]] || die "Missing sibling script: $SCRIPT_DIR/$script"
-  bash -n "$SCRIPT_DIR/$script"
+  [[ -f "$INSTALLERS_DIR/$script" ]] || die "Missing installer script: $INSTALLERS_DIR/$script"
+  bash -n "$INSTALLERS_DIR/$script"
 done
 
 export AOSP_ROOT PROJECT_ROOT
 
-log "Stage 1/4: base Java Symbol and AIDL/Binder graph"
-bash "$SCRIPT_DIR/setup_android_context_intelligence_v1.sh" "$MODE"
+log "Stage 1/5: base Java Symbol and AIDL/Binder graph"
+bash "$INSTALLERS_DIR/setup_android_context_intelligence_v1.sh" "$MODE"
 
-log "Stage 2/4: Java Inheritance graph"
-bash "$SCRIPT_DIR/install_java_inheritance_graph_v01.sh"
+log "Stage 2/5: Java Inheritance graph"
+bash "$INSTALLERS_DIR/install_java_inheritance_graph_v01.sh"
 
-log "Stage 3/4: System Service Registration graph"
-bash "$SCRIPT_DIR/install_system_service_registration_graph_v01.sh"
+log "Stage 3/5: System Service Registration graph"
+bash "$INSTALLERS_DIR/install_system_service_registration_graph_v01.sh"
 
-log "Stage 4/4: Multi-Repository Source Configuration"
-bash "$SCRIPT_DIR/install_multi_repository_source_configuration_v01.sh"
+log "Stage 4/5: Multi-Repository Source Configuration"
+bash "$INSTALLERS_DIR/install_multi_repository_source_configuration_v01.sh"
+
+log "Stage 5/5: Vendor Customization Graph Integration"
+bash "$INSTALLERS_DIR/install_vendor_customization_graph_v01.sh"
 
 log "Complete installation verified"
 echo "Project: $PROJECT_ROOT"

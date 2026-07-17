@@ -10,7 +10,7 @@ D:\AndroidContextIntelligence\android-context-current
 
 这个目录是之前 WSL 工程的代码快照，主要用于开发和验证后续安装脚本，不是安装输入。
 
-干净安装只需要复制工作区根目录的以下 6 个脚本：
+干净安装只需要复制工作区根目录的总入口和 installers/ 目录：
 
 ```text
 setup_android_context_intelligence_v1.sh
@@ -18,7 +18,7 @@ install_java_inheritance_graph_v01.sh
 install_system_service_registration_graph_v01.sh
 install_multi_repository_source_configuration_v01.sh
 install_vendor_customization_graph_v01.sh
-setup_android_context_intelligence_complete_v01.sh
+setup.sh
 ```
 
 其中推荐直接运行最后一个总入口。它会依次调用前五个脚本，在 `/home/ts/android-context-intelligence` 创建完整工程。
@@ -256,7 +256,7 @@ Java、AIDL、Kotlin、C、C++、Rust、HIDL、Python、Blueprint、Make、Proto
 
 单独使用场景：需要分析厂商闭源包（如 `services.jar`, `SystemUI.apk`），提取厂商新增或重写的特有逻辑并挂载到基线关系上。
 
-### `setup_android_context_intelligence_complete_v01.sh`
+### `setup.sh`
 
 总安装入口，按顺序调用前五个脚本。
 
@@ -312,17 +312,17 @@ WSL 中执行：
 ```bash
 mkdir -p /home/ts/android-context-installers
 
-cp /mnt/d/AndroidContextIntelligence/*.sh \
+cp /mnt/d/AndroidContextIntelligence/setup.sh /home/ts/android-context-installers/ \ncp -r /mnt/d/AndroidContextIntelligence/installers /home/ts/android-context-installers/ \
   /home/ts/android-context-installers/
 
-chmod +x /home/ts/android-context-installers/*.sh
+chmod +x /home/ts/android-context-installers/setup.sh \nchmod +x /home/ts/android-context-installers/installers/*.sh
 ```
 
 ### 2. 使用默认路径安装
 
 ```bash
 cd /home/ts/android-context-installers
-./setup_android_context_intelligence_complete_v01.sh --fresh
+./setup.sh --fresh
 ```
 
 `--fresh` 会备份已有项目目录，然后重新创建工具工程，不会直接删除旧工程。
@@ -334,14 +334,14 @@ cd /home/ts/android-context-installers
 
 AOSP_ROOT=/path/to/aosp \
 PROJECT_ROOT=/path/to/android-context-intelligence \
-./setup_android_context_intelligence_complete_v01.sh --fresh
+./setup.sh --fresh
 ```
 
 ### 4. 在已有工具工程上重装/更新
 
 ```bash
 cd /home/ts/android-context-installers
-./setup_android_context_intelligence_complete_v01.sh --rebuild
+./setup.sh --rebuild
 ```
 
 ## 六、已有工程的多仓库升级
@@ -676,7 +676,7 @@ ls /home/ts/aosp/frameworks/base
 或显式设置：
 
 ```bash
-AOSP_ROOT=/actual/aosp/path ./setup_android_context_intelligence_complete_v01.sh --fresh
+AOSP_ROOT=/actual/aosp/path ./setup.sh --fresh
 ```
 
 ### Ctags 不正确
@@ -725,7 +725,7 @@ bash -n scripts/rebuild_all.sh
 首次安装：
 
 ```bash
-./setup_android_context_intelligence_complete_v01.sh --fresh
+./setup.sh --fresh
 ```
 
 增加仓库：
@@ -862,7 +862,7 @@ jq -r '.build_id' data/workspace/build-manifest.json
 两个值必须一致，且 live 数据库不应残留 `-wal` 或 `-shm` 文件。
 
 干净 AOSP/WSL 安装仍只需要工作区根目录的 5 个 `.sh` 脚本，推荐运行
-`setup_android_context_intelligence_complete_v01.sh --fresh`。不需要把
+`setup.sh --fresh`。不需要把
 `android-context-current` 复制到 WSL；该目录是开发快照和安装 payload 的验证基线。
 
 项目架构、设计和实施计划索引见 [doc/README.md](doc/README.md)。
