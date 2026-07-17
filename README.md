@@ -331,6 +331,17 @@ exclude = ["tests", "prebuilt", "generated"]
 - 为大语言模型提供标准化图谱查询接口（MCP）
 - 结合 `jadx-ai-mcp` 实现"图谱宏观导航 + 反编译微观透视"
 
+### 关于高级分析引擎 (CodeQL / SCIP / Joern) 的演进说明
+
+在早期架构规划中，CodeQL / SCIP / Joern 曾被列为图谱构建的主力引擎。但在实际落地（[Final Technical Plan](doc/architecture/Android_Context_Graph_Final_Technical_Plan.md)）中，我们做出了关键调整：**它们不再是基础图谱的必需组件，而是后续按需引入的“增强层”**。
+
+在 Phase 0-1 阶段，我们采用 `Universal Ctags + 启发式 Python 解析器` 作为轻量级平替，在不编译 AOSP 的前提下，以极低成本完成了 90% 的关键骨架提取（类/方法/Binder/系统服务）。
+
+在后续阶段，当启发式解析无法满足精度时，我们将按需引入这些重型引擎：
+- **CodeQL**：用于精确的方法内 Call Graph、数据流追踪（Data Flow），特别是追踪权限检查沿调用栈的跨组件传播。
+- **SCIP**：用于大规模跨仓的精确 Definition / Reference 索引。
+- **Joern**：用于 C/C++、HAL 和 Native Binder 链路的安全与逻辑分析。
+
 ## 十三、`android-context-current` 说明
 
 该目录是之前 WSL 工程的开发快照，用于安装脚本的验证基线。干净安装**不需要复制**此目录。仅在以下场景有用：检查已生成工程的源码、对比安装脚本生成结果、在没有 WSL 环境时进行接口审查。
