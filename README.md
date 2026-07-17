@@ -297,41 +297,39 @@ exclude = ["tests", "prebuilt", "generated"]
 
 ## 十二、技术路线图
 
-### 当前已完成（v0.1.1）
+完整架构设计见 [android-specific-context-graph.md](doc/architecture/android-specific-context-graph.md)，详细技术方案见 [Final Technical Plan](doc/architecture/Android_Context_Graph_Final_Technical_Plan.md)。
 
-| 里程碑 | 状态 | 说明 |
-|--------|------|------|
-| Java Symbol Graph | ✅ | 390K+ 节点 |
-| AIDL/Binder Graph | ✅ | 885 接口，6569 方法 |
-| Java Inheritance Graph | ✅ | 4679 EXTENDS + 4366 IMPLEMENTS |
-| System Service Registration | ✅ | 90 服务注册 |
-| Multi-Repository Configuration | ✅ | 1087 仓库发现 |
-| Kotlin 符号解析 | ✅ | 353K+ 节点 |
-| Vendor 反编译融合 | ✅ | Jadx 自动流水线，2M+ 厂商节点 |
-| 原子化数据库重建 | ✅ | Staging → Publish 安全发布 |
+以下是架构文档定义的 7 阶段路线与当前实际进度的对照：
 
-### Phase 1: Permission Enforcement Graph（近期）
+| 阶段 | 架构定义 | 当前状态 | 说明 |
+|------|---------|---------|------|
+| **Phase 0** | 基础环境 | ✅ 已完成 | WSL2 + SQLite + Universal Ctags + Graph Schema |
+| **Phase 1** | Generic Code Graph | ✅ 已完成 | Java/Kotlin Symbol 743K+、AIDL/Binder 885 接口、Inheritance 9K+ 边、Service Registration 90 服务 |
+| — | Multi-Repository | ✅ 已完成 | 1087 仓库发现、TOML 配置驱动、原子化重建 |
+| — | Vendor Customization | ✅ 已完成 | Jadx 反编译 + 增量融合，2M+ 厂商节点 |
+| **Phase 2** | Android Semantic Graph | 🔜 **下一步** | Permission Graph、Build Graph（Soong/Ninja） |
+| **Phase 3** | Incremental Updater | 🔲 未开始 | Git Change Detector、Graph Patch、Stale 标记 |
+| **Phase 4** | Runtime / Test Graph | 🔲 未开始 | ADB/Perfetto 采集、CTS/XTS 结果解析、PASS/FAIL Diff |
+| **Phase 5** | Context Expander | 🔲 未开始 | Issue Parser → Seed Nodes → Rule-based Expansion → Problem Context Graph |
+| **Phase 6** | Loop Engine | 🔲 未开始 | Observe → Expand → Diagnose → Plan → Execute → Verify 闭环 |
 
-- **目标**：在 `Method → Binder → SystemService` 骨架上注入权限控制流。
-- **方案**：
-  1. 扫描 `checkPermission()`、`enforceCallingOrSelfPermission()`、`@RequiresPermission` 调用点。
-  2. 生成 `ENFORCES_PERMISSION` 边。
-  3. 实现跨方法、跨组件的权限约束传递分析。
+### Phase 2 细分计划（下一步行动）
 
-### Phase 2: Runtime & Build Context Graph（中期）
+根据 [Final Technical Plan](doc/architecture/Android_Context_Graph_Final_Technical_Plan.md) 的优先级建议，Phase 2 将按以下顺序实施：
 
-- **目标**：解决"代码存在但未编译/未运行"的盲区。
-- **方案**：
-  1. **Build Graph**：解析 `module-info.json` / Ninja，建立源码到产物的映射。
-  2. **Runtime Graph**：ADB / Perfetto 采集运行中的 Service 列表、UID、APEX 状态。
+**2a. Permission Enforcement Graph**
+- 扫描 `checkPermission()`、`enforceCallingOrSelfPermission()`、`@RequiresPermission`
+- 解析 `AndroidManifest.xml` 权限声明、`privapp-permissions*.xml`、`sysconfig/*.xml`
+- 生成 `ENFORCES_PERMISSION`、`REQUIRES_PERMISSION`、`GRANTED_BY` 等边
 
-### Phase 3: AI-MCP 集成（远期）
+**2b. Build Graph**
+- 解析 Soong module graph / actions + Ninja 依赖
+- 建立 `Source → Soong Module → Artifact → Partition → Image` 链路
+- 回答"修改某文件需要重建哪些模块"
 
-- **目标**：为大语言模型提供标准化的图谱查询接口。
-- **方案**：
-  1. 提供 MCP 接口（如 `find_vendor_overrides()`、`trace_permission_chain()`）。
-  2. AI 通过图谱宏观定位，再通过 MCP 动态读取反编译源码微观分析。
-  3. 实现"先导航，再狙击"的最佳上下文成本比。
+**2c. AI-MCP 集成（可与 2a/2b 并行）**
+- 为大语言模型提供标准化图谱查询接口（MCP）
+- 结合 `jadx-ai-mcp` 实现"图谱宏观导航 + 反编译微观透视"
 
 ## 十三、`android-context-current` 说明
 
