@@ -14,7 +14,8 @@ AndroidContextIntelligence/
 │   ├── install_java_inheritance_graph_v01.sh
 │   ├── install_system_service_registration_graph_v01.sh
 │   ├── install_multi_repository_source_configuration_v01.sh
-│   └── install_vendor_customization_graph_v01.sh
+│   ├── install_vendor_customization_graph_v01.sh
+│   └── install_permission_enforcement_graph_v01.sh
 ├── android-context-current/          # 开发快照（不需要复制到 WSL）
 ├── doc/                              # 架构设计、可行性分析、实施计划
 │   ├── architecture/
@@ -86,7 +87,7 @@ AOSP 源码 + 厂商闭源包 (.jar/.apk)
 
 ### `setup.sh`（总入口）
 
-按顺序调用 `installers/` 目录下的 5 个脚本，在目标路径创建完整工程。
+按顺序调用 `installers/` 目录下的 6 个脚本，在目标路径创建完整工程。
 
 ### `installers/setup_android_context_intelligence_v1.sh`
 
@@ -107,6 +108,10 @@ AOSP 源码 + 厂商闭源包 (.jar/.apk)
 ### `installers/install_vendor_customization_graph_v01.sh`
 
 闭源厂商定制图谱融合流水线：自动调用 `jadx` 反编译 `.jar`/`.apk`，将反编译源码无缝增量融合到 AOSP 基线图谱。
+
+### `installers/install_permission_enforcement_graph_v01.sh`
+
+增加权限执行图谱（Phase 2a）：通过正则扫描源码与 XML 清单，将 `@RequiresPermission`、`checkPermission` 控制流精确映射到 `METHOD`，形成 `ENFORCES_PERMISSION` 边。
 
 ## 四、环境要求
 

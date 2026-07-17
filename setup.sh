@@ -34,6 +34,7 @@ scripts=(
   install_system_service_registration_graph_v01.sh
   install_multi_repository_source_configuration_v01.sh
   install_vendor_customization_graph_v01.sh
+  install_permission_enforcement_graph_v01.sh
 )
 
 for script in "${scripts[@]}"; do
@@ -43,20 +44,23 @@ done
 
 export AOSP_ROOT PROJECT_ROOT
 
-log "Stage 1/5: base Java Symbol and AIDL/Binder graph"
+log "Stage 1/6: base Java Symbol and AIDL/Binder graph"
 bash "$INSTALLERS_DIR/setup_android_context_intelligence_v1.sh" "$MODE"
 
-log "Stage 2/5: Java Inheritance graph"
+log "Stage 2/6: Java Inheritance graph"
 bash "$INSTALLERS_DIR/install_java_inheritance_graph_v01.sh"
 
-log "Stage 3/5: System Service Registration graph"
+log "Stage 3/6: System Service Registration graph"
 bash "$INSTALLERS_DIR/install_system_service_registration_graph_v01.sh"
 
-log "Stage 4/5: Multi-Repository Source Configuration"
+log "Stage 4/6: Multi-Repository Source Configuration"
 bash "$INSTALLERS_DIR/install_multi_repository_source_configuration_v01.sh"
 
-log "Stage 5/5: Vendor Customization Graph Integration"
+log "Stage 5/6: Vendor Customization Graph Integration"
 bash "$INSTALLERS_DIR/install_vendor_customization_graph_v01.sh"
+
+log "Stage 6/6: Permission Enforcement Graph"
+bash "$INSTALLERS_DIR/install_permission_enforcement_graph_v01.sh"
 
 log "Complete installation verified"
 echo "Project: $PROJECT_ROOT"
