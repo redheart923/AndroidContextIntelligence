@@ -792,11 +792,11 @@ JAVA_CLASS_RE = re.compile(
     r"""
     \bclass\s+
     (?P<class_name>[A-Za-z_][A-Za-z0-9_]*)
-    (?P<between>.*?)
+    (?P<between>[^;{}]*?)
     \bextends\s+
     (?P<aidl_name>[A-Za-z_][A-Za-z0-9_$.]*)\.Stub
     """,
-    re.DOTALL | re.VERBOSE,
+    re.VERBOSE,
 )
 
 BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
