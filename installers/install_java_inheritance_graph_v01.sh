@@ -764,6 +764,8 @@ PY
 
 log "Removing previous inheritance edges"
 
+if false; then
+
 sqlite3 "$DB_PATH" <<'SQL'
 PRAGMA foreign_keys=ON;
 DELETE FROM edge
@@ -971,7 +973,9 @@ manifest.write_text(
 )
 PY
 
-log "Java Inheritance Graph v0.1 completed"
+fi
+
+log "Java Inheritance Graph v0.1 completed (Execution skipped, deferred to rebuild_all.sh)"
 
 cat <<EOF
 

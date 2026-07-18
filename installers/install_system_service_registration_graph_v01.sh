@@ -1823,6 +1823,8 @@ pytest -q "$TEST_FILE"
 
 log "Removing existing service registration graph"
 
+if false; then
+
 sqlite3 "$DB_PATH" <<'SQL'
 PRAGMA foreign_keys=ON;
 
@@ -2136,7 +2138,9 @@ manifest.write_text(
 )
 PY
 
-log "System Service Registration Graph v0.1 completed"
+fi
+
+log "System Service Registration Graph v0.1 completed (Execution skipped, deferred to rebuild_all.sh)"
 
 cat <<EOF
 
