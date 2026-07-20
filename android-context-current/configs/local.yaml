@@ -1,5 +1,0 @@
-source_root: "/home/ts/aosp"
-frameworks_base: "/home/ts/aosp/frameworks/base"
-database:
-  type: sqlite
-  path: "/home/ts/android-context-intelligence/data/android_context.db"
