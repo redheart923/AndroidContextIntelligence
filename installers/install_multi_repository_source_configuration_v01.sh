@@ -2361,8 +2361,6 @@ python -m pytest -q \
     tests/unit/test_build_publish.py \
     tests/integration/test_atomic_rebuild.py
 
-log "Running full multi-repository rebuild"
-./scripts/rebuild_all.sh
 
 log "Updating documentation"
 cat >> README.md <<'EOF'
