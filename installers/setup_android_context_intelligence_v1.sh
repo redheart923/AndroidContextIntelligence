@@ -1731,8 +1731,6 @@ python -m py_compile \
 
 bash -n "$PROJECT_ROOT/scripts/rebuild_all.sh"
 
-log "Running canonical clean rebuild"
-"$PROJECT_ROOT/scripts/rebuild_all.sh"
 
 log "Writing installation manifest"
 
