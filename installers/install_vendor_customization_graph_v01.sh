@@ -29,7 +29,8 @@ cat > "$PROJECT_ROOT/scripts/import_vendor.sh" <<'SH'
 set -Eeuo pipefail
 
 PROJECT_ROOT="${PROJECT_ROOT:-$(pwd)}"
-VENDOR_RAW="$PROJECT_ROOT/data/raw/vendor"
+# Default to data/raw/vendor, but allow an override via $1
+VENDOR_RAW="${1:-$PROJECT_ROOT/data/raw/vendor}"
 VENDOR_SRC="$PROJECT_ROOT/data/staging/vendor_src"
 DB_PATH="$PROJECT_ROOT/data/android_context.db"
 CTAGS_OUT="$PROJECT_ROOT/data/staging/vendor_ctags.jsonl"
@@ -44,7 +45,9 @@ files=("$VENDOR_RAW"/*.jar "$VENDOR_RAW"/*.apk)
 shopt -u nullglob
 
 if [ ${#files[@]} -eq 0 ]; then
-    log "No .jar or .apk found in $VENDOR_RAW. Please add vendor files and re-run."
+    log "No .jar or .apk found in $VENDOR_RAW."
+    log "Usage: $0 [path/to/vendor/jars]"
+    log "Please add vendor files to $VENDOR_RAW or provide a custom path and re-run."
     exit 0
 fi
 
@@ -113,8 +116,7 @@ log "Vendor Customization Graph v0.1 completed."
 echo ""
 echo "================================================================"
 echo "Usage Instructions:"
-echo "1. Place vendor artifacts (.jar, .apk) in:"
-echo "   $PROJECT_ROOT/data/raw/vendor/"
-echo "2. Run the integration pipeline:"
-echo "   cd $PROJECT_ROOT && ./scripts/import_vendor.sh"
+echo "1. (Optional) Run the integration pipeline by providing the directory with your JAR/APKs:"
+echo "   cd $PROJECT_ROOT && ./scripts/import_vendor.sh /path/to/your/jars"
+echo "   (If no path is provided, it defaults to scanning $PROJECT_ROOT/data/raw/vendor/)"
 echo "================================================================"
