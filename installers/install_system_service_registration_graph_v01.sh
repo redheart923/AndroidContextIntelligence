@@ -322,11 +322,13 @@ CLASS_RE = re.compile(
 
 STRING_CONSTANT_RE = re.compile(
     r"""
+    \b
     (?:
-        public|protected|private|static|final|
-        transient|volatile|\s
+        (?:public|protected|private|static|final|
+        transient|volatile)
+        \s+
     )*
-    \bString\s+
+    String\s+
     (?P<name>[A-Za-z_][A-Za-z0-9_]*)
     \s*=\s*
     (?P<expression>[^;]+)
@@ -351,13 +353,15 @@ VARIABLE_DECL_RE = re.compile(
 
 METHOD_DECL_RE = re.compile(
     r"""
+    \b
     (?:
-        public|protected|private|static|final|abstract|
-        synchronized|native|strictfp|default|\s
-    )+
-    (?P<return_type>[A-Za-z_][A-Za-z0-9_.$<>\[\]?]*)
+        (?:public|protected|private|static|final|abstract|
+        synchronized|native|strictfp|default)
+        \s+
+    )*
+    (?P<return_type>[A-Za-z_][A-Za-z0-9_.$<>\[\]?]+)
     \s+
-    (?P<name>[A-Za-z_][A-Za-z0-9_]*)
+    (?P<name>[A-Za-z_][A-Za-z0-9_]+)
     \s*\(
     """,
     re.VERBOSE,
