@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 from typing import Any
-from graph.writer import Edge, stable_id
+from graph.writer import Node, Edge, stable_id
 
 REQUIRES_PERMISSION_RE = re.compile(r'@RequiresPermission\s*\((.*?)\)')
 STRING_LITERAL_RE = re.compile(r'"([a-zA-Z0-9_.]+)"')
@@ -20,7 +20,7 @@ def load_methods(db_connection: Any, source_path: str) -> list[tuple[int, str]]:
     ''', (source_path,))
     return [(row[0], row[1]) for row in cursor.fetchall() if row[0] is not None]
 
-def scan_file_for_permissions(file_path: Path, source_root: Path, methods: list[tuple[int, str]]) -> list[Edge]:
+def scan_file_for_permissions(file_path: Path, source_root: Path, methods: list[tuple[int, str]]) -> list[tuple[Node, Edge]]:
     """
     Scans a Java/Kotlin file line by line to extract permission requirements and enforcements.
     """
@@ -50,13 +50,23 @@ def scan_file_for_permissions(file_path: Path, source_root: Path, methods: list[
                             break
                     
                     if method_id:
-                        edges.append(Edge(
-                            edge_type="REQUIRES_PERMISSION",
-                            from_node_id=method_id,
-                            to_node_id=stable_id("PERMISSION", perm),
-                            source_path=relative_path,
-                            line_start=line_num,
+                        perm_node = Node(
+                            node_id=stable_id("PERMISSION", perm),
+                            node_type="PERMISSION",
+                            display_name=perm,
+                            qualified_name=perm,
                             extractor="java_permission_scanner"
+                        )
+                        edges.append((
+                            perm_node,
+                            Edge(
+                                edge_type="REQUIRES_PERMISSION",
+                                from_node_id=method_id,
+                                to_node_id=perm_node.node_id,
+                                source_path=relative_path,
+                                line_start=line_num,
+                                extractor="java_permission_scanner"
+                            )
                         ))
             
             # 2. Look for checkPermission / enforceCallingOrSelfPermission
@@ -71,13 +81,23 @@ def scan_file_for_permissions(file_path: Path, source_root: Path, methods: list[
                         break
                 
                 if method_id:
-                    edges.append(Edge(
-                        edge_type="ENFORCES_PERMISSION",
-                        from_node_id=method_id,
-                        to_node_id=stable_id("PERMISSION", perm),
-                        source_path=relative_path,
-                        line_start=line_num,
+                    perm_node = Node(
+                        node_id=stable_id("PERMISSION", perm),
+                        node_type="PERMISSION",
+                        display_name=perm,
+                        qualified_name=perm,
                         extractor="java_permission_scanner"
+                    )
+                    edges.append((
+                        perm_node,
+                        Edge(
+                            edge_type="ENFORCES_PERMISSION",
+                            from_node_id=method_id,
+                            to_node_id=perm_node.node_id,
+                            source_path=relative_path,
+                            line_start=line_num,
+                            extractor="java_permission_scanner"
+                        )
                     ))
 
     return edges

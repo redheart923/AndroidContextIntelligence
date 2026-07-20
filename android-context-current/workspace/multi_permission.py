@@ -69,9 +69,11 @@ def main() -> int:
                     relative_path = str(file_path).replace("\\", "/")
                 
                 methods = load_methods(conn, relative_path)
-                file_edges = scan_file_for_permissions(file_path, root, methods)
-                for edge in file_edges:
+                file_results = scan_file_for_permissions(file_path, root, methods)
+                for perm_node, edge in file_results:
+                    writer.upsert_node(perm_node)
                     writer.upsert_edge(edge)
+                    nodes.append(perm_node)
                     edges.append(edge)
                     
     finally:
