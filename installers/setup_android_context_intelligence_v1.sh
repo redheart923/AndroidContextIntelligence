@@ -424,7 +424,9 @@ KOTLIN_KIND_MAP = {
     "typealias": "KOTLIN_TYPEALIAS",
     "method": "KOTLIN_METHOD",
     "variable": "KOTLIN_VARIABLE",
+    "property": "KOTLIN_PROPERTY",
     "constant": "KOTLIN_CONSTANT",
+    "enumConstant": "KOTLIN_ENUM_CONSTANT",
     "package": "KOTLIN_PACKAGE",
 }
 
@@ -486,24 +488,24 @@ def normalize_scope(scope: str | None, package_name: str) -> str:
 def build_identity(
     record: dict,
     package_name: str,
+    node_type: str,
 ) -> tuple[str, str | None]:
-    kind = record.get("kind")
     name = record.get("name", "")
     signature = record.get("signature") or ""
     scope = normalize_scope(record.get("scope"), package_name)
 
-    if kind == "package":
+    if node_type in {"JAVA_PACKAGE", "KOTLIN_PACKAGE"}:
         # Ctags may emit only the final segment as the name.
         return package_name or name, None
 
-    if kind in {"class", "interface", "enum", "annotation"}:
+    if node_type in {"JAVA_CLASS", "JAVA_INTERFACE", "JAVA_ENUM", "JAVA_ANNOTATION", "KOTLIN_CLASS", "KOTLIN_INTERFACE", "KOTLIN_OBJECT", "KOTLIN_TYPEALIAS"}:
         if scope:
             qualified_name = f"{scope}.{name}"
         else:
             qualified_name = qualify(package_name, name)
         return qualified_name, scope or package_name or None
 
-    if kind == "method":
+    if node_type in {"JAVA_METHOD", "KOTLIN_METHOD"}:
         owner = scope or package_name
         qualified_name = (
             f"{owner}#{name}{signature}"
@@ -512,7 +514,7 @@ def build_identity(
         )
         return qualified_name, owner or None
 
-    if kind in {"field", "enumConstant"}:
+    if node_type in {"JAVA_FIELD", "JAVA_ENUM_CONSTANT", "KOTLIN_VARIABLE", "KOTLIN_CONSTANT", "KOTLIN_PROPERTY", "KOTLIN_ENUM_CONSTANT"}:
         owner = scope or package_name
         qualified_name = f"{owner}#{name}" if owner else name
         return qualified_name, owner or None
@@ -536,8 +538,8 @@ def iter_records(input_path: Path):
                 yield record
 
 
-def collect_owner_ids(db_path: Path) -> set[str]:
-    node_types = tuple(OWNER_KIND_MAP.values())
+def collect_owner_ids(db_path: Path, owner_kind_map: dict[str, str]) -> set[str]:
+    node_types = tuple(owner_kind_map.values())
     placeholders = ",".join("?" for _ in node_types)
 
     with sqlite3.connect(db_path) as connection:
@@ -559,6 +561,7 @@ def first_pass(
     kind_map: dict[str, str] | None = None,
 ) -> tuple[int, int]:
     active_kind_map = kind_map if kind_map is not None else KIND_MAP
+
     writer = GraphWriter(db_path)
     imported = 0
     skipped = 0
@@ -578,6 +581,7 @@ def first_pass(
             qualified_name, owner_qname = build_identity(
                 record,
                 package_name,
+                node_type,
             )
 
             if not qualified_name:
@@ -647,7 +651,7 @@ def second_pass(
 ) -> tuple[int, int]:
     active_kind_map = kind_map if kind_map is not None else KIND_MAP
     active_owner_kind_map = owner_kind_map if owner_kind_map is not None else OWNER_KIND_MAP
-    owner_ids = collect_owner_ids(db_path)
+    owner_ids = collect_owner_ids(db_path, active_owner_kind_map)
     writer = GraphWriter(db_path)
     inserted = 0
     missing_owner = 0
@@ -657,7 +661,7 @@ def second_pass(
             kind = record.get("kind")
             member_kinds = {"method", "field", "enumConstant"}
             if active_kind_map is KOTLIN_KIND_MAP:
-                member_kinds = {"method", "variable", "constant"}
+                member_kinds = {"method", "variable", "constant", "property", "enumConstant"}
             if kind not in member_kinds:
                 continue
 
@@ -673,9 +677,15 @@ def second_pass(
             package_name = read_package_name(
                 str(Path(raw_path).resolve())
             )
+            node_type = active_kind_map.get(kind)
+            if not node_type:
+                missing_owner += 1
+                continue
+
             qualified_name, owner_qname = build_identity(
                 record,
                 package_name,
+                node_type,
             )
 
             if not qualified_name or not owner_qname:
@@ -690,10 +700,6 @@ def second_pass(
                 missing_owner += 1
                 continue
 
-            node_type = active_kind_map.get(kind)
-            if not node_type:
-                missing_owner += 1
-                continue
             member_id = stable_id(node_type, qualified_name)
             relation = (
                 "HAS_METHOD"
@@ -737,6 +743,7 @@ def main() -> int:
         args.db_path,
         args.source_root,
         kind_map=kind_map,
+        owner_kind_map=owner_kind_map,
     )
     owner_edges, missing_owner = second_pass(
         args.ctags_jsonl,
