@@ -48,9 +48,9 @@ if [ ${#files[@]} -eq 0 ]; then
     exit 0
 fi
 
-export PATH="/home/ts/jadx-1.5.6/bin:$PATH"
-if ! command -v jadx >/dev/null 2>&1; then
-    log "ERROR: 'jadx' command not found. Please install jadx and ensure it is in PATH."
+JADX_BIN=~/jadx-1.5.6/bin/jadx
+if [ ! -f "$JADX_BIN" ]; then
+    log "ERROR: 'jadx' command not found at $JADX_BIN. Please install jadx."
     exit 1
 fi
 
@@ -59,7 +59,10 @@ for file in "${files[@]}"; do
     out_dir="$VENDOR_SRC/${name%.*}"
     if [ ! -d "$out_dir" ]; then
         log "Decompiling $name with jadx..."
-        jadx -d "$out_dir" --no-res "$file" || true
+        if ! "$JADX_BIN" -d "$out_dir" --no-res --no-debug-info --threads-count 4 "$file"; then
+            log "ERROR: Failed to decompile $name"
+            exit 1
+        fi
     else
         log "Directory $out_dir already exists. Skipping decompilation for $name."
     fi
@@ -67,22 +70,39 @@ done
 
 log "Extracting symbols from vendor sources via Universal Ctags..."
 # Reuse identical ctags configuration from AOSP baseline
-ctags --options=NONE --fields=+nKSE --extras=+q -R --languages=Java,Kotlin --output-format=json "$VENDOR_SRC" > "$CTAGS_OUT"
+if ! ctags --options=NONE --fields=+nKSE --extras=+q -R --languages=Java,Kotlin --output-format=json "$VENDOR_SRC" > "$CTAGS_OUT"; then
+    log "ERROR: Failed to run ctags"
+    exit 1
+fi
 
 log "Importing vendor symbols into Android Context Graph..."
 source "$PROJECT_ROOT/.venv/bin/activate"
 export PYTHONPATH="$PROJECT_ROOT"
 
 # Stage 1: Import basic symbols (classes, methods, fields)
-python -m collectors.source.ctags_importer "$CTAGS_OUT" "$DB_PATH" "$VENDOR_SRC"
+log "Importing Java symbols..."
+if ! python -m collectors.source.ctags_importer "$CTAGS_OUT" "$DB_PATH" "$VENDOR_SRC"; then
+    log "ERROR: Failed to import Java symbols"
+    exit 1
+fi
+
+log "Importing Kotlin symbols..."
+if ! python -m collectors.source.ctags_importer --language kotlin "$CTAGS_OUT" "$DB_PATH" "$VENDOR_SRC"; then
+    log "ERROR: Failed to import Kotlin symbols"
+    exit 1
+fi
 
 # Stage 2: Extract and resolve cross-references (extends, implements)
 # This magically bridges vendor classes to existing AOSP nodes!
-python -m collectors.source.java_inheritance_importer \
+log "Running inheritance resolution..."
+if ! python -m collectors.source.java_inheritance_importer \
     --ctags-jsonl "$CTAGS_OUT" \
     --db "$DB_PATH" \
     --source-root "$VENDOR_SRC" \
-    --report "$VENDOR_SRC/inheritance_report.json"
+    --report "$VENDOR_SRC/inheritance_report.json"; then
+    log "ERROR: Failed to resolve inheritance"
+    exit 1
+fi
 
 log "Vendor Graph Integration completed successfully."
 SH
