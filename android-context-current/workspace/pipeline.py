@@ -73,14 +73,37 @@ def run_java(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
     return duplicates
 
 
+def run_kotlin(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
+    aosp = Path(plan["aosp_root"]); raw_dir.mkdir(parents=True, exist_ok=True)
+    duplicates: list[dict] = []
+    for repo in repositories_for(plan, "kotlin", "symbols"):
+        output = raw_dir / f"{slug(repo['name'])}-kotlin.jsonl"
+        command = ["ctags", "--languages=Kotlin", "--output-format=json", "--fields=+nKSEi", "-R", "-f", str(output)]
+        for pattern in list(plan.get("default_exclude", [])) + list(repo.get("exclude", [])):
+            command.append(f"--exclude={pattern}")
+        command.extend(str(x) for x in scan_paths(aosp, repo))
+        subprocess.run(command, check=True)
+        before = node_sources(db)
+        subprocess.run([sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp), "--language", "kotlin"], check=True)
+        after = node_sources(db)
+        for node_id, old_path in before.items():
+            new_path = after.get(node_id)
+            if old_path and new_path and old_path != new_path:
+                duplicates.append({"node_id": node_id, "first_source": old_path, "replacement_source": new_path, "repository": repo["name"]})
+    (raw_dir / "duplicate-qualified-names-kotlin.json").write_text(json.dumps(duplicates, indent=2), encoding="utf-8")
+    return duplicates
+
+
 def run_inheritance(plan_path: Path, plan: dict, db: Path, raw_dir: Path, report_dir: Path) -> None:
     aosp = Path(plan["aosp_root"]); report_dir.mkdir(parents=True, exist_ok=True)
-    for repo in repositories_for(plan, "java", "inheritance"):
-        source = raw_dir / f"{slug(repo['name'])}.jsonl"
-        if source.is_file():
-            subprocess.run([sys.executable, "-m", "collectors.source.java_inheritance_importer",
-                "--ctags-jsonl", str(source), "--source-root", str(aosp), "--db", str(db),
-                "--report", str(report_dir / f"{slug(repo['name'])}.json")], check=True)
+    for lang in ["java", "kotlin"]:
+        for repo in repositories_for(plan, lang, "inheritance"):
+            suffix = "-kotlin" if lang == "kotlin" else ""
+            source = raw_dir / f"{slug(repo['name'])}{suffix}.jsonl"
+            if source.is_file():
+                subprocess.run([sys.executable, "-m", "collectors.source.java_inheritance_importer",
+                    "--ctags-jsonl", str(source), "--source-root", str(aosp), "--db", str(db),
+                    "--report", str(report_dir / f"{slug(repo['name'])}{suffix}.json")], check=True)
 
 
 def annotate(db: Path, plan: dict) -> None:
@@ -97,11 +120,12 @@ def annotate(db: Path, plan: dict) -> None:
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(); p.add_argument("command", choices=["java", "inheritance", "annotate"])
+    p = argparse.ArgumentParser(); p.add_argument("command", choices=["java", "kotlin", "inheritance", "annotate"])
     p.add_argument("--plan", type=Path, required=True); p.add_argument("--db", type=Path, required=True)
     p.add_argument("--ctags-dir", type=Path, default=Path("data/raw/ctags")); p.add_argument("--report-dir", type=Path, default=Path("data/raw/inheritance"))
     a = p.parse_args(); plan = load_plan(a.plan)
     if a.command == "java": run_java(plan, a.db, a.ctags_dir)
+    elif a.command == "kotlin": run_kotlin(plan, a.db, a.ctags_dir)
     elif a.command == "inheritance": run_inheritance(a.plan, plan, a.db, a.ctags_dir, a.report_dir)
     else: annotate(a.db, plan)
     return 0

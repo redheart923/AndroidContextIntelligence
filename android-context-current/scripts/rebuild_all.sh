@@ -132,6 +132,11 @@ python -m workspace.pipeline java \
     --db "$STAGED_DB" \
     --ctags-dir "$STAGED_RAW/ctags"
 
+python -m workspace.pipeline kotlin \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --ctags-dir "$STAGED_RAW/ctags"
+
 python -m workspace.multi_aidl \
     --plan "$PLAN" \
     --db "$STAGED_DB" \
