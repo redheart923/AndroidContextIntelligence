@@ -63,8 +63,7 @@ for file in "${files[@]}"; do
     if [ ! -d "$out_dir" ]; then
         log "Decompiling $name with jadx..."
         if ! "$JADX_BIN" -d "$out_dir" --no-res --no-debug-info --threads-count 4 "$file"; then
-            log "ERROR: Failed to decompile $name"
-            exit 1
+            log "WARNING: jadx finished with errors for $name, but will continue with successfully decompiled files."
         fi
     else
         log "Directory $out_dir already exists. Skipping decompilation for $name."
