@@ -435,12 +435,15 @@ OWNER_KIND_MAP = {
     "interface": "JAVA_INTERFACE",
     "enum": "JAVA_ENUM",
     "annotation": "JAVA_ANNOTATION",
+    "package": "JAVA_PACKAGE",
 }
 
 KOTLIN_OWNER_KIND_MAP = {
     "class": "KOTLIN_CLASS",
+    "enum": "KOTLIN_CLASS",
     "interface": "KOTLIN_INTERFACE",
     "object": "KOTLIN_OBJECT",
+    "package": "KOTLIN_PACKAGE",
 }
 
 PACKAGE_RE = re.compile(
@@ -665,9 +668,11 @@ def second_pass(
             if kind not in member_kinds:
                 continue
 
-            owner_type = active_owner_kind_map.get(
-                record.get("scopeKind") or ""
-            )
+            scope_kind = record.get("scopeKind") or ""
+            if not scope_kind:
+                scope_kind = "package"
+
+            owner_type = active_owner_kind_map.get(scope_kind)
             if not owner_type:
                 missing_owner += 1
                 continue
