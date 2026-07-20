@@ -67,20 +67,18 @@ echo "Project: $PROJECT_ROOT"
 echo "Canonical rebuild: cd $PROJECT_ROOT && ./scripts/rebuild_all.sh"
 
 echo ""
-read -p "Do you want to run the full AOSP Graph Rebuild now? (This will overwrite existing data) [y/N]: " run_rebuild
-if [[ "$run_rebuild" =~ ^[Yy]$ ]]; then
-    cd "$PROJECT_ROOT"
-    ./scripts/rebuild_all.sh
-    
-    echo ""
-    read -p "Do you want to run the Vendor Customization Integration now? [y/N]: " run_vendor
-    if [[ "$run_vendor" =~ ^[Yy]$ ]]; then
-        read -p "Enter directory containing vendor jars/apks [default: data/raw/vendor]: " vendor_dir
-        vendor_dir="${vendor_dir:-data/raw/vendor}"
-        if [ -x "$PROJECT_ROOT/scripts/import_vendor.sh" ]; then
-            "$PROJECT_ROOT/scripts/import_vendor.sh" "$vendor_dir"
-        else
-            echo "[ERROR] scripts/import_vendor.sh not found or not executable."
-        fi
+echo "Running the full AOSP Graph Rebuild (this will overwrite existing data)..."
+cd "$PROJECT_ROOT"
+./scripts/rebuild_all.sh
+
+echo ""
+read -p "Do you want to run the Vendor Customization Integration now? [y/N]: " run_vendor
+if [[ "$run_vendor" =~ ^[Yy]$ ]]; then
+    read -p "Enter directory containing vendor jars/apks [default: data/raw/vendor]: " vendor_dir
+    vendor_dir="${vendor_dir:-data/raw/vendor}"
+    if [ -x "$PROJECT_ROOT/scripts/import_vendor.sh" ]; then
+        "$PROJECT_ROOT/scripts/import_vendor.sh" "$vendor_dir"
+    else
+        echo "[ERROR] scripts/import_vendor.sh not found or not executable."
     fi
 fi
