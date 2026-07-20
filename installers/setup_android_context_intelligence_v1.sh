@@ -743,7 +743,6 @@ def main() -> int:
         args.db_path,
         args.source_root,
         kind_map=kind_map,
-        owner_kind_map=owner_kind_map,
     )
     owner_edges, missing_owner = second_pass(
         args.ctags_jsonl,
