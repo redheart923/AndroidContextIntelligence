@@ -34,7 +34,6 @@ for path in \
     "$PROJECT_ROOT" \
     "$PROJECT_ROOT/.venv" \
     "$FW_BASE" \
-    "$DB_PATH" \
     "$REBUILD_SCRIPT" \
     "$PROJECT_ROOT/graph/writer.py"; do
     [[ -e "$path" ]] || die "Missing required path: $path"
