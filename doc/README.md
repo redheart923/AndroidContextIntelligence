@@ -21,6 +21,7 @@
 已确认的功能设计。
 
 - [Atomic Database Rebuild v0.1](designs/2026-07-16-atomic-database-rebuild-v01-design.md)：原子重建、失败回滚、WAL 安全和发布恢复设计。
+- [Trustworthy Source and Installation Baseline](designs/2026-07-21-trustworthy-source-and-installation-baseline-design.md)：规范源码、薄安装器、WSL 生成物边界和可信发布基线设计。
 
 ## Plans
 
