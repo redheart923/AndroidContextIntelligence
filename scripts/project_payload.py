@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import json
+import os
 from pathlib import Path
+import tempfile
+from typing import Any
 
 
 PAYLOAD_DIRECTORIES = (
@@ -23,6 +27,9 @@ PAYLOAD_FILES = (
     "README.md",
     "requirements-lock.txt",
 )
+
+DEFAULT_MANIFEST_NAME = ".android-context-installation.json"
+MANIFEST_SCHEMA_VERSION = 1
 
 _EXCLUDED_DIRECTORY_NAMES = {
     ".git",
@@ -56,6 +63,17 @@ class PayloadDiff:
     @property
     def is_clean(self) -> bool:
         return not (self.added or self.removed or self.modified)
+
+
+@dataclass(frozen=True)
+class PayloadManifest:
+    schema_version: int
+    source_commit: str
+    files: dict[str, str]
+
+
+class PayloadManifestError(ValueError):
+    pass
 
 
 def _is_excluded(relative_path: Path) -> bool:
@@ -109,9 +127,10 @@ def payload_hashes(root: Path) -> dict[str, str]:
     }
 
 
-def compare_payload(expected: Path, actual: Path) -> PayloadDiff:
-    expected_hashes = payload_hashes(expected)
-    actual_hashes = payload_hashes(actual)
+def _compare_hashes(
+    expected_hashes: dict[str, str],
+    actual_hashes: dict[str, str],
+) -> PayloadDiff:
     expected_paths = set(expected_hashes)
     actual_paths = set(actual_hashes)
 
@@ -127,3 +146,86 @@ def compare_payload(expected: Path, actual: Path) -> PayloadDiff:
         ),
     )
 
+
+def compare_payload(expected: Path, actual: Path) -> PayloadDiff:
+    return _compare_hashes(payload_hashes(expected), payload_hashes(actual))
+
+
+def write_manifest(
+    payload_root: Path,
+    output: Path,
+    source_commit: str,
+) -> None:
+    if not source_commit:
+        raise PayloadManifestError("source_commit must not be empty")
+
+    document = {
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "source_commit": source_commit,
+        "files": payload_hashes(payload_root),
+    }
+    output = Path(output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        dir=output.parent,
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as stream:
+            json.dump(document, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _validate_manifest_document(document: Any) -> PayloadManifest:
+    if not isinstance(document, dict):
+        raise PayloadManifestError("manifest must be a JSON object")
+    if document.get("schema_version") != MANIFEST_SCHEMA_VERSION:
+        raise PayloadManifestError(
+            f"unsupported manifest schema: {document.get('schema_version')!r}"
+        )
+
+    source_commit = document.get("source_commit")
+    if not isinstance(source_commit, str) or not source_commit:
+        raise PayloadManifestError("manifest source_commit must be a non-empty string")
+
+    files = document.get("files")
+    if not isinstance(files, dict):
+        raise PayloadManifestError("manifest files must be an object")
+    normalized_files: dict[str, str] = {}
+    for path, digest in files.items():
+        if not isinstance(path, str) or not path or Path(path).is_absolute():
+            raise PayloadManifestError(f"invalid manifest file path: {path!r}")
+        if ".." in Path(path).parts:
+            raise PayloadManifestError(f"unsafe manifest file path: {path!r}")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)
+        ):
+            raise PayloadManifestError(f"invalid SHA-256 for manifest file: {path}")
+        normalized_files[path] = digest
+
+    return PayloadManifest(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        source_commit=source_commit,
+        files=dict(sorted(normalized_files.items())),
+    )
+
+
+def load_manifest(path: Path) -> PayloadManifest:
+    try:
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PayloadManifestError(f"cannot read manifest {path}: {error}") from error
+    return _validate_manifest_document(document)
+
+
+def verify_manifest(target: Path, manifest: PayloadManifest) -> PayloadDiff:
+    return _compare_hashes(manifest.files, payload_hashes(target))
