@@ -37,6 +37,7 @@
 
 - [Repository Architecture Review](reviews/2026-07-21-repository-architecture-review.md)：重大风险、当前修复状态、数据库证据与后续优先级。
 - [Canonical Source Drift Audit](reviews/2026-07-21-source-drift-audit.md)：从历史 WSL 生成目录迁移到 `project/` 时的逐项差异决策。
+- [Trustworthy Baseline Acceptance](reviews/2026-07-21-trustworthy-baseline-acceptance.md)：WSL 临时 fresh/verify/upgrade 验收、漂移修复、保留路径和 live 数据库未改动证据。
 
 ## 文档分类规范
 

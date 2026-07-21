@@ -2,6 +2,8 @@ from __future__ import annotations
 import argparse, json, sqlite3, subprocess, sys
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 def load_plan(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -63,7 +65,11 @@ def run_java(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
         command.extend(str(x) for x in scan_paths(aosp, repo))
         subprocess.run(command, check=True)
         before = node_sources(db)
-        subprocess.run([sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp)], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp)],
+            check=True,
+            cwd=PROJECT_ROOT,
+        )
         after = node_sources(db)
         for node_id, old_path in before.items():
             new_path = after.get(node_id)
@@ -84,7 +90,11 @@ def run_kotlin(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
         command.extend(str(x) for x in scan_paths(aosp, repo))
         subprocess.run(command, check=True)
         before = node_sources(db)
-        subprocess.run([sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp), "--language", "kotlin"], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp), "--language", "kotlin"],
+            check=True,
+            cwd=PROJECT_ROOT,
+        )
         after = node_sources(db)
         for node_id, old_path in before.items():
             new_path = after.get(node_id)
@@ -101,9 +111,13 @@ def run_inheritance(plan_path: Path, plan: dict, db: Path, raw_dir: Path, report
             suffix = "-kotlin" if lang == "kotlin" else ""
             source = raw_dir / f"{slug(repo['name'])}{suffix}.jsonl"
             if source.is_file():
-                subprocess.run([sys.executable, "-m", "collectors.source.java_inheritance_importer",
-                    "--ctags-jsonl", str(source), "--source-root", str(aosp), "--db", str(db),
-                    "--report", str(report_dir / f"{slug(repo['name'])}{suffix}.json")], check=True)
+                subprocess.run(
+                    [sys.executable, "-m", "collectors.source.java_inheritance_importer",
+                     "--ctags-jsonl", str(source), "--source-root", str(aosp), "--db", str(db),
+                     "--report", str(report_dir / f"{slug(repo['name'])}{suffix}.json")],
+                    check=True,
+                    cwd=PROJECT_ROOT,
+                )
 
 
 def annotate(db: Path, plan: dict) -> None:

@@ -2,4 +2,4 @@
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "--strict-markers"
-
+pythonpath = ["project"]
