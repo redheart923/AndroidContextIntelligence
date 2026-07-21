@@ -29,6 +29,7 @@
 
 - [Multi-Repository Source Configuration v0.1](plans/2026-07-16-multi-repository-source-configuration-v01-plan.md)：已完成的多仓库配置实施与验收记录。
 - [Atomic Database Rebuild v0.1](plans/2026-07-16-atomic-database-rebuild-v01-plan.md)：原子数据库重建 TDD 实施计划。
+- [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
 ## 文档分类规范
 
