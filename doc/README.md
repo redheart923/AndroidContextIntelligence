@@ -22,6 +22,7 @@
 
 - [Atomic Database Rebuild v0.1](designs/2026-07-16-atomic-database-rebuild-v01-design.md)：原子重建、失败回滚、WAL 安全和发布恢复设计。
 - [Trustworthy Source and Installation Baseline](designs/2026-07-21-trustworthy-source-and-installation-baseline-design.md)：规范源码、薄安装器、WSL 生成物边界和可信发布基线设计。
+- [Permission Semantics Graph v0.1](designs/2026-07-21-permission-semantics-graph-v01-design.md)：权限声明、请求、privapp/default-permissions 策略以及 Java/Kotlin 检查与执行语义设计。
 
 ## Plans
 
@@ -29,6 +30,7 @@
 
 - [Multi-Repository Source Configuration v0.1](plans/2026-07-16-multi-repository-source-configuration-v01-plan.md)：已完成的多仓库配置实施与验收记录。
 - [Atomic Database Rebuild v0.1](plans/2026-07-16-atomic-database-rebuild-v01-plan.md)：原子数据库重建 TDD 实施计划。
+- [Permission Enforcement Graph v0.1（已被设计取代）](plans/2026-07-17-permission-enforcement-graph-v01-plan.md)：旧版逐行扫描方案，仅保留为历史记录，不应继续执行。
 - [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
 ## Reviews
