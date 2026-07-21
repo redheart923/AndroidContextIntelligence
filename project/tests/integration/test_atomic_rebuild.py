@@ -190,6 +190,7 @@ def project(tmp_path: Path) -> Path:
     _write(root / "workspace/pipeline.py", PIPELINE_STUB)
     _write(root / "workspace/multi_aidl.py", REPORT_STUB)
     _write(root / "workspace/multi_service.py", REPORT_STUB)
+    _write(root / "workspace/multi_permission.py", REPORT_STUB)
     data = root / "data"
     data.mkdir()
     _seed_database(data / "android_context.db", "old")
