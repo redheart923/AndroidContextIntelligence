@@ -1,76 +1,54 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from scripts.verify_installer_payload import PayloadError, extract_payload
-
 
 ROOT = Path(__file__).resolve().parents[1]
-INSTALLER = ROOT / "install_multi_repository_source_configuration_v01.sh"
-PAYLOADS = (
-    (
-        "workspace/build_publish.py",
-        ROOT / "android-context-current/workspace/build_publish.py",
-    ),
-    (
-        "tests/unit/test_build_publish.py",
-        ROOT / "android-context-current/tests/unit/test_build_publish.py",
-    ),
-    (
-        "tests/integration/test_atomic_rebuild.py",
-        ROOT / "android-context-current/tests/integration/test_atomic_rebuild.py",
-    ),
-    (
-        "scripts/rebuild_all.sh",
-        ROOT / "android-context-current/scripts/rebuild_all.sh",
-    ),
+WRAPPERS = (
+    "setup_android_context_intelligence_v1.sh",
+    "install_java_inheritance_graph_v01.sh",
+    "install_system_service_registration_graph_v01.sh",
+    "install_multi_repository_source_configuration_v01.sh",
+    "install_vendor_customization_graph_v01.sh",
+    "install_permission_enforcement_graph_v01.sh",
+)
+FORBIDDEN_PAYLOAD_MARKERS = (
+    "cat >",
+    "base64 -d",
+    "read -p",
+    "workspace/build_publish.py",
+    "workspace/multi_permission.py",
+    "scripts/rebuild_all.sh <<",
 )
 
 
-@pytest.mark.parametrize("target,snapshot", PAYLOADS)
-def test_installer_payload_matches_snapshot(target: str, snapshot: Path) -> None:
-    assert extract_payload(INSTALLER, target) == snapshot.read_text(encoding="utf-8")
+@pytest.mark.parametrize("name", WRAPPERS)
+def test_compatibility_wrapper_delegates_without_owning_payload(name: str) -> None:
+    wrapper = ROOT / "installers" / name
+    text = wrapper.read_text(encoding="utf-8")
+
+    assert "setup.sh" in text
+    assert "exec" in text
+    assert "--upgrade" in text
+    for marker in FORBIDDEN_PAYLOAD_MARKERS:
+        assert marker not in text
 
 
-def test_extract_payload_rejects_missing_target(tmp_path: Path) -> None:
-    installer = tmp_path / "installer.sh"
-    installer.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
-
-    with pytest.raises(PayloadError, match="missing payload"):
-        extract_payload(installer, "workspace/missing.py")
-
-
-def test_extract_payload_rejects_duplicate_target(tmp_path: Path) -> None:
-    installer = tmp_path / "installer.sh"
-    installer.write_text(
-        "cat > workspace/module.py <<'PY'\nfirst\nPY\n"
-        "cat > workspace/module.py <<'PY'\nsecond\nPY\n",
-        encoding="utf-8",
+@pytest.mark.parametrize("name", WRAPPERS)
+def test_compatibility_wrapper_passes_bash_syntax(name: str) -> None:
+    wrapper = ROOT / "installers" / name
+    result = subprocess.run(
+        ["bash", "-n", str(wrapper)],
+        check=False,
+        capture_output=True,
+        text=True,
     )
 
-    with pytest.raises(PayloadError, match="duplicate payload"):
-        extract_payload(installer, "workspace/module.py")
+    assert result.returncode == 0, result.stderr
 
 
-def test_extract_payload_rejects_unquoted_delimiter(tmp_path: Path) -> None:
-    installer = tmp_path / "installer.sh"
-    installer.write_text(
-        "cat > workspace/module.py <<PY\ncontent\nPY\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(PayloadError, match="unquoted heredoc"):
-        extract_payload(installer, "workspace/module.py")
-
-
-def test_extract_payload_rejects_unterminated_payload(tmp_path: Path) -> None:
-    installer = tmp_path / "installer.sh"
-    installer.write_text(
-        "cat > workspace/module.py <<'PY'\ncontent\n",
-        encoding="utf-8",
-    )
-
-    with pytest.raises(PayloadError, match="unterminated payload"):
-        extract_payload(installer, "workspace/module.py")
+def test_obsolete_self_extracting_payload_verifier_is_removed() -> None:
+    assert not (ROOT / "scripts/verify_installer_payload.py").exists()

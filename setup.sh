@@ -1,84 +1,108 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALLERS_DIR="$SCRIPT_DIR/installers"
-AOSP_ROOT="${AOSP_ROOT:-/home/ts/aosp}"
-PROJECT_ROOT="${PROJECT_ROOT:-/home/ts/android-context-intelligence}"
-MODE="${1:---fresh}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PAYLOAD_ROOT="$SCRIPT_DIR/project"
+CANONICAL_INSTALLER="$SCRIPT_DIR/installers/install_project.sh"
+AOSP_ROOT="${AOSP_ROOT:-$HOME/aosp}"
+PROJECT_ROOT="${PROJECT_ROOT:-$HOME/android-context-intelligence}"
+MODE=""
+REBUILD=0
 
-log() { printf '\n[%s] %s\n' "$(date '+%F %T')" "$*"; }
-die() { printf '\n[ERROR] %s\n' "$*" >&2; exit 1; }
-trap 'die "failed at line $LINENO"' ERR
+usage() {
+    printf '%s\n' \
+        "Usage:" \
+        "  ./setup.sh --fresh [--rebuild]" \
+        "  ./setup.sh --upgrade [--rebuild]" \
+        "  ./setup.sh --verify-only" \
+        "" \
+        "Environment:" \
+        "  AOSP_ROOT=/path/to/aosp" \
+        "  PROJECT_ROOT=/path/to/android-context-intelligence" \
+        "  ANDROID_CONTEXT_SOURCE_COMMIT=<git-commit>"
+}
 
-case "$MODE" in
-  --fresh|--rebuild) ;;
-  -h|--help)
-    cat <<'EOF'
-Usage:
-  ./setup.sh --fresh
-  ./setup.sh --rebuild
+die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 2
+}
 
-Environment:
-  AOSP_ROOT=/home/ts/aosp
-  PROJECT_ROOT=/home/ts/android-context-intelligence
-EOF
-    exit 0
-    ;;
-  *) die "Unknown mode: $MODE" ;;
-esac
+require_command() {
+    command -v "$1" >/dev/null 2>&1 || die "required rebuild command is missing: $1"
+}
 
-scripts=(
-  setup_android_context_intelligence_v1.sh
-  install_java_inheritance_graph_v01.sh
-  install_system_service_registration_graph_v01.sh
-  install_multi_repository_source_configuration_v01.sh
-  install_vendor_customization_graph_v01.sh
-  install_permission_enforcement_graph_v01.sh
-)
+select_mode() {
+    [[ -z "$MODE" ]] || die "exactly one install mode is required"
+    MODE="$1"
+}
 
-for script in "${scripts[@]}"; do
-  [[ -f "$INSTALLERS_DIR/$script" ]] || die "Missing installer script: $INSTALLERS_DIR/$script"
-  bash -n "$INSTALLERS_DIR/$script"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --fresh|--upgrade|--verify-only)
+            select_mode "$1"
+            shift
+            ;;
+        --rebuild)
+            REBUILD=1
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            usage >&2
+            die "unknown option: $1"
+            ;;
+    esac
 done
 
-export AOSP_ROOT PROJECT_ROOT
+if [[ -z "$MODE" ]]; then
+    usage >&2
+    die "an install mode is required"
+fi
+if [[ "$MODE" == "--verify-only" && "$REBUILD" -eq 1 ]]; then
+    die "--rebuild cannot be combined with --verify-only"
+fi
 
-log "Stage 1/6: base Java Symbol and AIDL/Binder graph"
-bash "$INSTALLERS_DIR/setup_android_context_intelligence_v1.sh" "$MODE"
+[[ -d "$PAYLOAD_ROOT" ]] || die "canonical project payload is missing: $PAYLOAD_ROOT"
+[[ -f "$CANONICAL_INSTALLER" ]] || die "canonical installer is missing: $CANONICAL_INSTALLER"
 
-log "Stage 2/6: Java Inheritance graph"
-bash "$INSTALLERS_DIR/install_java_inheritance_graph_v01.sh"
+if [[ "$REBUILD" -eq 1 ]]; then
+    [[ -d "$AOSP_ROOT" ]] || die "AOSP root is missing: $AOSP_ROOT"
+    [[ -d "$AOSP_ROOT/frameworks/base" ]] ||
+        die "AOSP frameworks/base is missing: $AOSP_ROOT/frameworks/base"
+    for command in python3 ctags sqlite3 rg find sha256sum flock; do
+        require_command "$command"
+    done
+    ctags --version | grep -qi "Universal Ctags" ||
+        die "rebuild requires Universal Ctags"
+fi
 
-log "Stage 3/6: System Service Registration graph"
-bash "$INSTALLERS_DIR/install_system_service_registration_graph_v01.sh"
+install_arguments=(
+    "$MODE"
+    --source "$PAYLOAD_ROOT"
+    --target "$PROJECT_ROOT"
+)
+if [[ -n "${ANDROID_CONTEXT_SOURCE_COMMIT:-}" ]]; then
+    install_arguments+=(--source-commit "$ANDROID_CONTEXT_SOURCE_COMMIT")
+fi
 
-log "Stage 4/6: Multi-Repository Source Configuration"
-bash "$INSTALLERS_DIR/install_multi_repository_source_configuration_v01.sh"
+bash "$CANONICAL_INSTALLER" "${install_arguments[@]}"
 
-log "Stage 5/6: Vendor Customization Graph Integration"
-bash "$INSTALLERS_DIR/install_vendor_customization_graph_v01.sh"
-
-log "Stage 6/6: Permission Enforcement Graph"
-bash "$INSTALLERS_DIR/install_permission_enforcement_graph_v01.sh"
-
-log "Complete installation verified"
-echo "Project: $PROJECT_ROOT"
-echo "Canonical rebuild: cd $PROJECT_ROOT && ./scripts/rebuild_all.sh"
-
-echo ""
-echo "Running the full AOSP Graph Rebuild (this will overwrite existing data)..."
-cd "$PROJECT_ROOT"
-./scripts/rebuild_all.sh
-
-echo ""
-read -p "Do you want to run the Vendor Customization Integration now? [y/N]: " run_vendor
-if [[ "$run_vendor" =~ ^[Yy]$ ]]; then
-    read -p "Enter directory containing vendor jars/apks [default: data/raw/vendor]: " vendor_dir
-    vendor_dir="${vendor_dir:-data/raw/vendor}"
-    if [ -x "$PROJECT_ROOT/scripts/import_vendor.sh" ]; then
-        "$PROJECT_ROOT/scripts/import_vendor.sh" "$vendor_dir"
-    else
-        echo "[ERROR] scripts/import_vendor.sh not found or not executable."
+if [[ "$REBUILD" -eq 1 ]]; then
+    if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
+        python3 -m venv "$PROJECT_ROOT/.venv"
     fi
+    "$PROJECT_ROOT/.venv/bin/python" -m pip install \
+        --disable-pip-version-check \
+        --requirement "$PROJECT_ROOT/requirements-lock.txt"
+    export PYTHONPATH="$PROJECT_ROOT"
+    bash "$PROJECT_ROOT/scripts/rebuild_all.sh"
+fi
+
+printf 'Android Context Intelligence setup: PASS\n'
+printf 'Project: %s\n' "$PROJECT_ROOT"
+if [[ "$MODE" != "--verify-only" ]]; then
+    printf 'Verify: PROJECT_ROOT=%q bash %q --verify-only\n' "$PROJECT_ROOT" "$SCRIPT_DIR/setup.sh"
 fi
