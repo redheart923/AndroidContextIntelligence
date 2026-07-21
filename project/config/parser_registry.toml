@@ -1,0 +1,52 @@
+[parsers.java]
+implementation = "java_symbol_importer"
+enabled = true
+capabilities = ["symbols", "inheritance", "service_registration", "permission_enforcement"]
+
+[parsers.aidl]
+implementation = "aidl_binder_importer"
+enabled = true
+capabilities = ["symbols", "binder"]
+
+[parsers.kotlin]
+implementation = "kotlin_ctags_importer"
+enabled = true
+capabilities = ["symbols", "inheritance", "service_registration", "permission_enforcement"]
+
+[parsers.c]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.cpp]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.rust]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.hidl]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.python]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.blueprint]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.make]
+implementation = ""
+enabled = false
+capabilities = []
+[parsers.proto]
+implementation = ""
+enabled = false
+capabilities = []
+
+[parsers.xml]
+implementation = "xml_permission_importer"
+enabled = true
+capabilities = ["permission_declaration"]

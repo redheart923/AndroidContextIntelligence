@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/raw/
+data/*.db
+data/*.db-*
+data/staging/
+data/rollback/
+data/.publish-journal.json
+data/.rebuild.lock

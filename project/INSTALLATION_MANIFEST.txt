@@ -1,0 +1,34 @@
+Installed: 2026-07-20T14:21:26+08:00
+Mode: --rebuild
+AOSP_ROOT: /home/ts/aosp
+PROJECT_ROOT: /home/ts/android-context-intelligence
+Database: /home/ts/android-context-intelligence/data/android_context.db
+
+Canonical entry point:
+  /home/ts/android-context-intelligence/scripts/rebuild_all.sh
+
+Generated layers:
+  Java Symbol Graph v0.2.2
+  AIDL/Binder Graph v0.1
+
+Next:
+  Java Inheritance Graph v0.1
+
+Multi-Repository Source Configuration v0.1
+  workspace/{models,config,manifest,languages,registry,planner,cli,pipeline,multi_aidl,multi_service}.py
+  config/source_roots.toml
+  config/parser_registry.toml
+  tests/unit/test_workspace_v01.py
+  queries/workspace_coverage_summary.sql
+  workspace/build_publish.py
+  tests/unit/test_build_publish.py
+  tests/integration/test_atomic_rebuild.py
+  scripts/rebuild_all.sh
+
+Atomic Database Rebuild v0.1
+  Complete batches stage under data/staging/<build-id>.
+  Database replacement is the final publication commit point.
+  --keep-failed-db retains failed batches for diagnosis.
+  Publication recovery uses data/.publish-journal.json.
+  All canonical modes share data/.rebuild.lock.
+  No additional root installer script is required.
