@@ -1,58 +1,53 @@
-# Android Context Intelligence
+# Android Context Intelligence Canonical Project
 
-Current deterministic graph layers:
+本目录是 Git 仓库中唯一的可执行项目源码。它会由根目录的
+`setup.sh` 安装到 WSL；已安装目录不是源码来源，也不应反向同步。
 
-1. Java Symbol Graph v0.2.2
-2. AIDL/Binder Graph v0.1
+完整安装、环境要求和风险说明见 [仓库 README](../README.md)。
 
-Canonical rebuild:
-
-```bash
-cd "/home/ts/android-context-intelligence"
-./scripts/rebuild_all.sh
-```
-
-Current database:
+## 受管内容
 
 ```text
-/home/ts/android-context-intelligence/data/android_context.db
+collectors/  config/  configs/  graph/  queries/
+scripts/     storage/ tests/    workspace/
 ```
 
-Next layer:
+安装器还会在部署根目录生成 `.android-context-installation.json`，记录
+来源 commit 和每个受管文件的 SHA-256。以下是运行状态，不属于 payload：
 
-- Java Inheritance Graph v0.1
-- Binder transitive implementation query v0.1.1
+```text
+.venv/  data/  caches  backups  vendor inputs  decompiler output
+```
 
-## Multi-Repository Source Configuration v0.1
+upgrade 保留 `.venv/`、`data/`、`config/source_roots.toml` 和
+`configs/local.yaml`。
 
-Repository discovery, language inventory, parser coverage and graph execution are configured in `config/source_roots.toml`. Repo manifest projects are discovered but disabled by default; explicitly enable repositories to control scan size.
+## 部署后的命令
 
 ```bash
-./scripts/rebuild_all.sh --discover-only
-./scripts/rebuild_all.sh --plan-only
-./scripts/rebuild_all.sh
-./scripts/rebuild_all.sh --strict
-./scripts/rebuild_all.sh --strict-capability permission_enforcement
+cd /home/ts/android-context-intelligence
+
+bash scripts/rebuild_all.sh --discover-only
+bash scripts/rebuild_all.sh --plan-only
+bash scripts/rebuild_all.sh
+bash scripts/rebuild_all.sh --keep-failed-db
+bash scripts/rebuild_all.sh --strict
 ```
 
-Java Symbol, AIDL/Binder, Java Inheritance and Java Service Registration support multiple enabled repositories. Kotlin, C/C++, Rust and HIDL are inventoried and reported as unsupported until a capability-specific parser is registered.
+原子重建先写入 `data/staging/<build-id>`，通过外键、服务链和报告验证后
+再发布 `data/android_context.db`。中断恢复和并发排斥由
+`workspace.build_publish` 与 `data/.rebuild.lock` 管理。
 
-## Atomic Database Rebuild v0.1
+## 开发验证
 
-The canonical rebuild creates one verified batch under `data/staging/<build-id>`
-and atomically replaces `data/android_context.db` only after all reports and
-validation gates pass. A pre-commit failure preserves the previous live batch.
+从 Git 仓库根目录运行：
 
 ```bash
-./scripts/rebuild_all.sh
-./scripts/rebuild_all.sh --keep-failed-db
-
-sqlite3 data/android_context.db \
-  "SELECT qualified_name FROM node WHERE node_type='GRAPH_BUILD';"
-jq -r '.build_id' data/workspace/build-manifest.json
+python -m pytest -q project/tests
+python -m compileall -q project
+bash -n project/scripts/rebuild_all.sh
 ```
 
-Failed batches are deleted by default or retained under `data/staging` with
-`--keep-failed-db`. Interrupted publication is recovered automatically on the
-next invocation. Concurrent rebuild, discover-only, and plan-only operations
-are rejected through `data/.rebuild.lock`.
+当前源码包含 Permission 和 Vendor 的基础采集器，但其存在不代表 live
+数据库覆盖已完成。Permission 语义、Vendor 原子导入和 source revision
+provenance 仍是下一阶段工作。

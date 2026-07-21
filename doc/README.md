@@ -31,6 +31,13 @@
 - [Atomic Database Rebuild v0.1](plans/2026-07-16-atomic-database-rebuild-v01-plan.md)：原子数据库重建 TDD 实施计划。
 - [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
+## Reviews
+
+基于代码、测试、WSL 部署和 live 数据的审查证据。
+
+- [Repository Architecture Review](reviews/2026-07-21-repository-architecture-review.md)：重大风险、当前修复状态、数据库证据与后续优先级。
+- [Canonical Source Drift Audit](reviews/2026-07-21-source-drift-audit.md)：从历史 WSL 生成目录迁移到 `project/` 时的逐项差异决策。
+
 ## 文档分类规范
 
 新增文档时继续使用以下分类：
@@ -40,4 +47,5 @@ doc/architecture/  长期架构和系统模型
 doc/feasibility/   可行性分析和技术验证
 doc/designs/       已确认的功能设计
 doc/plans/         可执行实施计划和验收记录
+doc/reviews/       基于当前代码和运行状态的审查证据
 ```
