@@ -59,7 +59,7 @@ def run_java(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
     duplicates: list[dict] = []
     for repo in repositories_for(plan, "java", "symbols"):
         output = raw_dir / f"{slug(repo['name'])}.jsonl"
-        command = ["ctags", "--languages=Java", "--output-format=json", "--fields=+nKSEi", "-R", "-f", str(output)]
+        command = ["ctags", "--languages=Java", "--output-format=json", "--fields=+nKSEie", "-R", "-f", str(output)]
         for pattern in list(plan.get("default_exclude", [])) + list(repo.get("exclude", [])):
             command.append(f"--exclude={pattern}")
         command.extend(str(x) for x in scan_paths(aosp, repo))
@@ -84,7 +84,7 @@ def run_kotlin(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
     duplicates: list[dict] = []
     for repo in repositories_for(plan, "kotlin", "symbols"):
         output = raw_dir / f"{slug(repo['name'])}-kotlin.jsonl"
-        command = ["ctags", "--languages=Kotlin", "--output-format=json", "--fields=+nKSEi", "-R", "-f", str(output)]
+        command = ["ctags", "--languages=Kotlin", "--output-format=json", "--fields=+nKSEie", "-R", "-f", str(output)]
         for pattern in list(plan.get("default_exclude", [])) + list(repo.get("exclude", [])):
             command.append(f"--exclude={pattern}")
         command.extend(str(x) for x in scan_paths(aosp, repo))

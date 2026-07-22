@@ -146,6 +146,186 @@ def iter_records(input_path: Path):
                 yield record
 
 
+def parse_line_range(
+    record: dict[str, object],
+) -> tuple[int | None, int | None]:
+    start = record.get("line")
+    if not isinstance(start, int):
+        return None, None
+    raw_end = record.get("end")
+    end = raw_end if isinstance(raw_end, int) and raw_end >= start else start
+    return start, end
+
+
+def _mask_non_code(text: str) -> str:
+    """Mask comments and literals while preserving offsets and newlines."""
+    result = list(text)
+    index = 0
+    state = "code"
+    block_depth = 0
+
+    def mask(position: int) -> None:
+        if result[position] != "\n":
+            result[position] = " "
+
+    while index < len(text):
+        pair = text[index:index + 2]
+        triple = text[index:index + 3]
+
+        if state == "code":
+            if pair == "//":
+                mask(index); mask(index + 1)
+                index += 2; state = "line_comment"
+                continue
+            if pair == "/*":
+                mask(index); mask(index + 1)
+                index += 2; state = "block_comment"; block_depth = 1
+                continue
+            if triple == '\"\"\"':
+                for position in range(index, index + 3):
+                    mask(position)
+                index += 3; state = "triple_string"
+                continue
+            if text[index] == '"':
+                mask(index); index += 1; state = "string"
+                continue
+            if text[index] == "'":
+                mask(index); index += 1; state = "character"
+                continue
+            index += 1
+            continue
+
+        if state == "line_comment":
+            if text[index] == "\n":
+                state = "code"
+            else:
+                mask(index)
+            index += 1
+            continue
+
+        if state == "block_comment":
+            if pair == "/*":
+                mask(index); mask(index + 1)
+                index += 2; block_depth += 1
+                continue
+            if pair == "*/":
+                mask(index); mask(index + 1)
+                index += 2; block_depth -= 1
+                if block_depth == 0:
+                    state = "code"
+                continue
+            mask(index); index += 1
+            continue
+
+        if state == "triple_string":
+            if triple == '\"\"\"':
+                for position in range(index, index + 3):
+                    mask(position)
+                index += 3; state = "code"
+                continue
+            mask(index); index += 1
+            continue
+
+        if text[index] == "\\" and index + 1 < len(text):
+            mask(index); mask(index + 1)
+            index += 2
+            continue
+
+        delimiter = '"' if state == "string" else "'"
+        if text[index] == delimiter:
+            mask(index); index += 1; state = "code"
+            continue
+        mask(index); index += 1
+
+    return "".join(result)
+
+
+@lru_cache(maxsize=65536)
+def _read_masked_source(absolute_path: str) -> str | None:
+    try:
+        text = Path(absolute_path).read_text(
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return None
+    return _mask_non_code(text)
+
+
+def _infer_balanced_method_end(record: dict[str, object], start: int) -> int | None:
+    raw_path = record.get("path")
+    if not isinstance(raw_path, str) or record.get("name") == "<lambda>":
+        return None
+
+    masked = _read_masked_source(str(Path(raw_path).resolve()))
+    if masked is None:
+        return None
+
+    line_offsets = [0]
+    for match in re.finditer("\n", masked):
+        line_offsets.append(match.end())
+    if start < 1 or start > len(line_offsets):
+        return None
+
+    index = line_offsets[start - 1]
+    parameter_depth = 0
+    square_depth = 0
+    saw_parameters = False
+    parameters_closed = False
+    body_start: int | None = None
+
+    while index < len(masked):
+        character = masked[index]
+        if character == "(":
+            parameter_depth += 1
+            saw_parameters = True
+        elif character == ")" and parameter_depth:
+            parameter_depth -= 1
+            if saw_parameters and parameter_depth == 0:
+                parameters_closed = True
+        elif character == "[":
+            square_depth += 1
+        elif character == "]" and square_depth:
+            square_depth -= 1
+        elif parameters_closed and parameter_depth == 0 and square_depth == 0:
+            if character == "{":
+                body_start = index
+                break
+            if character in "=;":
+                return None
+        index += 1
+
+    if body_start is None:
+        return None
+
+    brace_depth = 0
+    for index in range(body_start, len(masked)):
+        character = masked[index]
+        if character == "{":
+            brace_depth += 1
+        elif character == "}":
+            brace_depth -= 1
+            if brace_depth == 0:
+                return masked.count("\n", 0, index) + 1
+    return None
+
+
+def resolve_line_range(
+    record: dict[str, object],
+) -> tuple[int | None, int | None]:
+    start, end = parse_line_range(record)
+    if start is None:
+        return None, None
+    raw_end = record.get("end")
+    if isinstance(raw_end, int) and raw_end >= start:
+        return start, raw_end
+    if record.get("kind") == "method":
+        inferred_end = _infer_balanced_method_end(record, start)
+        if inferred_end is not None and inferred_end >= start:
+            return start, inferred_end
+    return start, end
+
+
 def collect_owner_ids(db_path: Path, owner_kind_map: dict[str, str]) -> set[str]:
     node_types = tuple(owner_kind_map.values())
     placeholders = ",".join("?" for _ in node_types)
@@ -196,7 +376,7 @@ def first_pass(
                 skipped += 1
                 continue
 
-            line = record.get("line")
+            line_start, line_end = resolve_line_range(record)
             node = Node(
                 node_id=stable_id(node_type, qualified_name),
                 node_type=node_type,
@@ -213,8 +393,8 @@ def first_pass(
                     "pattern": record.get("pattern"),
                 },
                 source_path=source_path,
-                line_start=line,
-                line_end=line,
+                line_start=line_start,
+                line_end=line_end,
                 extractor="universal-ctags-v0.2.1",
             )
             writer.upsert_node(node)
@@ -236,8 +416,8 @@ def first_pass(
                     from_node_id=node.node_id,
                     to_node_id=file_id,
                     source_path=source_path,
-                    line_start=line,
-                    line_end=line,
+                    line_start=line_start,
+                    line_end=line_end,
                     extractor="universal-ctags-v0.2.1",
                 )
             )
@@ -316,7 +496,7 @@ def second_pass(
                 if kind == "method"
                 else "HAS_MEMBER"
             )
-            line = record.get("line")
+            line_start, line_end = resolve_line_range(record)
 
             writer.upsert_edge(
                 Edge(
@@ -324,8 +504,8 @@ def second_pass(
                     from_node_id=owner_id,
                     to_node_id=member_id,
                     source_path=source_path,
-                    line_start=line,
-                    line_end=line,
+                    line_start=line_start,
+                    line_end=line_end,
                     extractor="universal-ctags-v0.2.1",
                 )
             )
