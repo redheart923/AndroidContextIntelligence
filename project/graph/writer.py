@@ -34,6 +34,7 @@ class Node:
     line_start: int | None = None
     line_end: int | None = None
     extractor: str = "unknown"
+    source_revision: str | None = None
 
 
 @dataclass(frozen=True)
@@ -46,9 +47,15 @@ class Edge:
     line_start: int | None = None
     line_end: int | None = None
     extractor: str = "unknown"
+    source_revision: str | None = None
 
     @property
     def edge_id(self) -> str:
+        properties_json = json.dumps(
+            self.properties,
+            ensure_ascii=False,
+            sort_keys=True,
+        )
         identity = "|".join(
             [
                 self.edge_type,
@@ -56,6 +63,8 @@ class Edge:
                 self.to_node_id,
                 self.source_path or "",
                 str(self.line_start or ""),
+                str(self.line_end or ""),
+                properties_json,
             ]
         )
         return stable_hash(identity)
@@ -72,6 +81,7 @@ class GraphWriter:
         self.c.execute("PRAGMA foreign_keys=ON")
 
     def upsert_node(self, node: Node) -> None:
+        effective_revision = node.source_revision or self.source_revision
         properties_json = json.dumps(
             node.properties,
             ensure_ascii=False,
@@ -87,6 +97,7 @@ class GraphWriter:
                     node.source_path or "",
                     str(node.line_start or ""),
                     str(node.line_end or ""),
+                    effective_revision,
                 ]
             )
         )
@@ -120,7 +131,7 @@ class GraphWriter:
                 node.source_path,
                 node.line_start,
                 node.line_end,
-                self.source_revision,
+                effective_revision,
                 node.extractor,
                 EXTRACTOR_VERSION,
                 content_hash,
@@ -130,6 +141,7 @@ class GraphWriter:
         )
 
     def upsert_edge(self, edge: Edge) -> None:
+        effective_revision = edge.source_revision or self.source_revision
         properties_json = json.dumps(
             edge.properties,
             ensure_ascii=False,
@@ -142,6 +154,10 @@ class GraphWriter:
                     edge.from_node_id,
                     edge.to_node_id,
                     properties_json,
+                    edge.source_path or "",
+                    str(edge.line_start or ""),
+                    str(edge.line_end or ""),
+                    effective_revision,
                 ]
             )
         )
@@ -185,7 +201,7 @@ class GraphWriter:
                 edge.source_path,
                 edge.line_start,
                 edge.line_end,
-                self.source_revision,
+                effective_revision,
                 edge.extractor,
                 EXTRACTOR_VERSION,
                 content_hash,
