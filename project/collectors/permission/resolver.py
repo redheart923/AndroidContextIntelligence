@@ -137,6 +137,9 @@ def _collection_contents(expression: str) -> str | None:
     direct_array = re.fullmatch(r"\{(?P<body>.*)\}", value, re.DOTALL)
     if direct_array:
         return direct_array.group("body")
+    kotlin_array = re.fullmatch(r"\[(?P<body>.*)\]", value, re.DOTALL)
+    if kotlin_array:
+        return kotlin_array.group("body")
     function = re.fullmatch(
         r"(?:arrayOf|listOf|setOf|Arrays\.asList)\s*\((?P<body>.*)\)",
         value,
