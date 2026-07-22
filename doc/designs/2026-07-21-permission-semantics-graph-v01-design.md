@@ -241,7 +241,11 @@ reported instead of silently coerced.
 ### Method ranges
 
 The Ctags collection command requests the `end` field. Java and Kotlin symbol
-importers store a real inclusive `line_end` when available. A source fact is
+importers store a real inclusive `line_end` when available. Universal Ctags
+5.9.0 emits that field for Java methods but not for Kotlin methods, so the
+symbol importer uses a layout-preserving balanced source-range fallback when
+the field is absent. It never invents a range when no balanced method body can
+be identified. A source fact is
 attached to the smallest method range satisfying:
 
 ```text

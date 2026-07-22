@@ -52,8 +52,14 @@ project/workspace/permission_validation.py    report/DB validation and fingerpri
 - Modify: `project/tests/integration/test_multi_repository_pipeline.py`
 
 **Interfaces:**
-- Consumes: Ctags records with `line` and optional `end`.
-- Produces: `parse_line_range(record: dict[str, object]) -> tuple[int | None, int | None]` and inclusive `line_end` values.
+- Consumes: Ctags records with `line` and optional `end`, plus the referenced
+  source file when Ctags omits `end`.
+- Produces: `parse_line_range(record: dict[str, object]) -> tuple[int | None, int | None]`,
+  `resolve_line_range(record: dict[str, object]) -> tuple[int | None, int | None]`,
+  and inclusive `line_end` values.
+- Parser behavior verified against Universal Ctags 5.9.0: Java emits `end`,
+  while Kotlin does not. Missing ranges therefore use a layout-preserving,
+  balanced method-body fallback and remain one line when no body can be proven.
 
 - [ ] **Step 1: Write failing unit tests**
 
@@ -71,7 +77,10 @@ def test_parse_line_range_falls_back_without_invalid_range() -> None:
     assert parse_line_range({}) == (None, None)
 ```
 
-Extend `test_multi_repository_pipeline.py` with a multiline Java method and assert its database row satisfies `line_end > line_start`.
+Extend `test_multi_repository_pipeline.py` with multiline Java and Kotlin
+methods and assert both database rows satisfy `line_end > line_start`. Add a
+unit fixture proving that a Kotlin record without `end` resolves to the
+matching closing brace while braces in comments and strings are ignored.
 
 - [ ] **Step 2: Verify RED**
 
@@ -102,6 +111,13 @@ def parse_line_range(record: dict[str, object]) -> tuple[int | None, int | None]
     end = raw_end if isinstance(raw_end, int) and raw_end >= start else start
     return start, end
 ```
+
+When `parse_line_range()` returns a single-line range for a method record,
+`resolve_line_range()` reads the referenced source, masks comments and string
+literals without changing line layout, finds the body opening brace after the
+balanced parameter list, and returns its matching closing-brace line. The
+fallback is conservative: malformed or expression-body declarations keep the
+single-line range and are reported unresolved by later semantic extraction.
 
 - [ ] **Step 4: Verify GREEN and commit**
 
