@@ -46,6 +46,24 @@ class PermissionReport:
         self._diagnostics: dict[str, PermissionDiagnostic] = {}
         self._counters: Counter[str] = Counter()
         self._duplicate_facts = 0
+        self._repositories: dict[str, str] = {}
+
+    def register_repository(self, name: str, revision: str | None) -> None:
+        self._repositories[name] = revision or "unknown"
+
+    def add_task_failure(self, task: dict[str, object], reason: str) -> None:
+        diagnostic = PermissionDiagnostic(
+            category="task_failures",
+            reason_code=reason,
+            repository=str(task.get("repository", "unknown")),
+            source_path=str(task.get("repository_path", "")),
+            line_start=None,
+            line_end=None,
+            expression=str(task.get("language", "")),
+            message=f"permission task failed: {reason}",
+            properties={"task": json_value(task)},
+        )
+        self._diagnostics.setdefault(diagnostic.identity, diagnostic)
 
     def add_outcome(self, outcome: ParseOutcome) -> None:
         for fact in outcome.facts:
@@ -108,14 +126,16 @@ class PermissionReport:
     def to_dict(self) -> dict[str, object]:
         facts = self.sorted_facts()
         diagnostics = self._diagnostics_by_category()
-        revisions = {
-            fact.evidence.repository: fact.evidence.source_revision or "unknown"
-            for fact in facts
-        }
+        revisions = dict(self._repositories)
+        for fact in facts:
+            revisions[fact.evidence.repository] = (
+                fact.evidence.source_revision or "unknown"
+            )
         repositories = sorted(
             {
                 *(fact.evidence.repository for fact in facts),
                 *(item.repository for item in self._diagnostics.values()),
+                *self._repositories,
             }
         )
         fact_counts = Counter(fact.kind.value for fact in facts)
