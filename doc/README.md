@@ -31,6 +31,7 @@
 - [Multi-Repository Source Configuration v0.1](plans/2026-07-16-multi-repository-source-configuration-v01-plan.md)：已完成的多仓库配置实施与验收记录。
 - [Atomic Database Rebuild v0.1](plans/2026-07-16-atomic-database-rebuild-v01-plan.md)：原子数据库重建 TDD 实施计划。
 - [Permission Enforcement Graph v0.1（已被设计取代）](plans/2026-07-17-permission-enforcement-graph-v01-plan.md)：旧版逐行扫描方案，仅保留为历史记录，不应继续执行。
+- [Permission Semantics Graph v0.1](plans/2026-07-22-permission-semantics-graph-v01-plan.md)：已确认设计对应的分阶段 TDD 实施、原子发布验证和真实 AOSP 验收计划。
 - [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
 ## Reviews
