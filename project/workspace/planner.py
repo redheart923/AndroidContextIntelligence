@@ -6,9 +6,11 @@ from .languages import detect_languages
 from .manifest import parse_repo_manifest
 from .models import LanguageInventory, PlanTask, RepositorySpec, WorkspacePlan
 from .registry import load_parser_registry
+from .revisions import resolve_repository_revision
 
-CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_enforcement"),
-                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_enforcement"),
+CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics"),
+                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics"),
+                "xml": ("permission_semantics",),
                 "c": ("symbols", "native_binder"), "cpp": ("symbols", "native_binder"),
                 "rust": ("symbols", "native_binder"), "hidl": ("symbols", "binder"),
                 "python": ("symbols",), "blueprint": ("build",), "make": ("build",), "proto": ("symbols",)}
@@ -41,7 +43,12 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
         repo = repos[key]
         location = Path(repo.path) if Path(repo.path).is_absolute() else config.aosp_root / repo.path
         status = "available" if location.is_dir() else "missing"
-        repo = replace(repo, status=status)
+        revision = (
+            resolve_repository_revision(location)
+            if repo.enabled and status == "available"
+            else None
+        )
+        repo = replace(repo, status=status, revision=revision)
         normalized.append(repo)
         if not repo.enabled or status != "available":
             if repo.enabled and status == "missing": gaps.append(PlanTask(repo.name, repo.path, "repository", "availability", None, "missing_repository", 0))
@@ -61,4 +68,12 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
     if effective_strict and gaps:
         sample = ", ".join(f"{x.repository}:{x.language}:{x.capability}:{x.status}" for x in gaps[:8])
         raise CoverageError(f"workspace coverage gaps: {sample}")
-    return WorkspacePlan(str(config.aosp_root), tuple(normalized), tuple(inventories), tuple(tasks), config.default_exclude)
+    return WorkspacePlan(
+        aosp_root=str(config.aosp_root),
+        repositories=tuple(normalized),
+        inventories=tuple(inventories),
+        tasks=tuple(tasks),
+        default_exclude=config.default_exclude,
+        strict=effective_strict,
+        strict_capability=strict_capability,
+    )

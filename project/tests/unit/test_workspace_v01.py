@@ -106,7 +106,7 @@ enabled = true
 [parsers.java]
 implementation = "java_symbol_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_enforcement"]
+capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
 [parsers.kotlin]
 implementation = ""
 enabled = false

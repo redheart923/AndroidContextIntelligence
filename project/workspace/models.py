@@ -45,12 +45,13 @@ class RepositorySpec:
     languages: tuple[str, ...] = ()
     source: str = "manifest"
     status: str = "available"
+    revision: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "path": self.path, "enabled": self.enabled,
                 "include": list(self.include), "exclude": list(self.exclude),
                 "languages": list(self.languages), "source": self.source,
-                "status": self.status}
+                "status": self.status, "revision": self.revision}
 
 
 @dataclass(frozen=True)
@@ -91,10 +92,14 @@ class WorkspacePlan:
     inventories: tuple[LanguageInventory, ...]
     tasks: tuple[PlanTask, ...]
     default_exclude: tuple[str, ...] = ()
+    strict: bool = False
+    strict_capability: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"aosp_root": self.aosp_root,
                 "default_exclude": list(self.default_exclude),
+                "strict": self.strict,
+                "strict_capability": self.strict_capability,
                 "repositories": [x.to_dict() for x in self.repositories],
                 "inventories": [x.to_dict() for x in self.inventories],
                 "tasks": [x.to_dict() for x in self.tasks]}

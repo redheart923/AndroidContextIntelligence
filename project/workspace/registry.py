@@ -6,7 +6,7 @@ from .models import ParserSpec
 
 BUILTINS = {
     "java": ParserSpec("java", "java_symbol_importer", True,
-        ("symbols", "inheritance", "service_registration", "permission_enforcement")),
+        ("symbols", "inheritance", "service_registration", "permission_semantics")),
     "aidl": ParserSpec("aidl", "aidl_binder_importer", True, ("symbols", "binder")),
 }
 

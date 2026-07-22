@@ -3,7 +3,7 @@ import tomllib
 from pathlib import Path
 from .models import ExtraRepository, RepositoryOverride, WorkspaceConfig
 
-KNOWN = {"java", "aidl", "kotlin", "c", "cpp", "rust", "hidl", "python", "blueprint", "make", "proto"}
+KNOWN = {"java", "aidl", "kotlin", "xml", "c", "cpp", "rust", "hidl", "python", "blueprint", "make", "proto"}
 
 
 def _strings(value: object, field: str) -> tuple[str, ...]:

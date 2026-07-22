@@ -1,7 +1,7 @@
 [parsers.java]
 implementation = "java_symbol_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_enforcement"]
+capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
 
 [parsers.aidl]
 implementation = "aidl_binder_importer"
@@ -11,7 +11,7 @@ capabilities = ["symbols", "binder"]
 [parsers.kotlin]
 implementation = "kotlin_ctags_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_enforcement"]
+capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
 
 [parsers.c]
 implementation = ""
@@ -49,4 +49,4 @@ capabilities = []
 [parsers.xml]
 implementation = "xml_permission_importer"
 enabled = true
-capabilities = ["permission_declaration"]
+capabilities = ["permission_semantics"]

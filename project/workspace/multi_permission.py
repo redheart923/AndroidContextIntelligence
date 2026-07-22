@@ -24,7 +24,7 @@ def main() -> int:
     writer = GraphWriter(args.db)
 
     xml_files = set()
-    for repo in repositories_for(plan, "xml", "permission_declaration"):
+    for repo in repositories_for(plan, "xml", "permission_semantics"):
         for path in scan_paths(root, repo):
             if path.is_file():
                 if path.suffix == '.xml' and source_allowed(root, repo, path, defaults):
@@ -36,7 +36,7 @@ def main() -> int:
 
     java_kt_files = set()
     for lang in ["java", "kotlin"]:
-        for repo in repositories_for(plan, lang, "permission_enforcement"):
+        for repo in repositories_for(plan, lang, "permission_semantics"):
             for path in scan_paths(root, repo):
                 if path.is_file():
                     if path.suffix in ('.java', '.kt') and source_allowed(root, repo, path, defaults):
