@@ -30,6 +30,11 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert 'STAGED_DB="$STAGING/android_context.db"' in script
     assert 'STAGED_WORKSPACE="$STAGING/workspace"' in script
     assert 'STAGED_RAW="$STAGING/raw"' in script
+    assert 'STAGED_RAW/permission/permission-semantics-report.json' in script
+    assert "workspace.permission_validation" in script
+    assert script.index("workspace.permission_validation") < script.index(
+        "workspace.build_publish prepare"
+    )
 
 
 SCHEMA = """
@@ -149,6 +154,41 @@ args.report.write_text("{}\n", encoding="utf-8")
 '''
 
 
+PERMISSION_REPORT_STUB = r'''from __future__ import annotations
+import argparse
+import json
+import os
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--plan")
+parser.add_argument("--db")
+parser.add_argument("--report", type=Path, required=True)
+args = parser.parse_args()
+payload = {
+    "schema_version": "1.0",
+    "parser_version": "1.0",
+    "source_revisions": {},
+    "repositories_scanned": [],
+    "files_scanned_by_language": {},
+    "xml_candidates_by_dialect": {},
+    "xml_documents_parsed_by_dialect": {},
+    "facts_and_edges_by_type": {},
+    "duplicate_facts": 0,
+    "declaration_conflicts": [],
+    "malformed_xml": [],
+    "unresolved_permission_expressions": [],
+    "unresolved_method_owners": [],
+    "unsupported_constructs": [],
+    "task_failures": [],
+}
+args.report.parent.mkdir(parents=True, exist_ok=True)
+args.report.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+if os.environ.get("FORCE_PERMISSION_FAILURE") == "1":
+    raise SystemExit(19)
+'''
+
+
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -180,6 +220,7 @@ def project(tmp_path: Path) -> Path:
     root.mkdir()
     shutil.copytree(SNAPSHOT_ROOT / "workspace", root / "workspace")
     shutil.copytree(SNAPSHOT_ROOT / "graph", root / "graph")
+    shutil.copytree(SNAPSHOT_ROOT / "collectors", root / "collectors")
     (root / "scripts").mkdir()
     shutil.copy2(CANONICAL_SCRIPT, root / "scripts" / "rebuild_all.sh")
     _write(root / ".venv/bin/activate", "")
@@ -190,7 +231,7 @@ def project(tmp_path: Path) -> Path:
     _write(root / "workspace/pipeline.py", PIPELINE_STUB)
     _write(root / "workspace/multi_aidl.py", REPORT_STUB)
     _write(root / "workspace/multi_service.py", REPORT_STUB)
-    _write(root / "workspace/multi_permission.py", REPORT_STUB)
+    _write(root / "workspace/multi_permission.py", PERMISSION_REPORT_STUB)
     data = root / "data"
     data.mkdir()
     _seed_database(data / "android_context.db", "old")
@@ -241,6 +282,35 @@ def test_keep_failed_retains_and_prints_staging_batch(project: Path) -> None:
     ]
     assert len(retained) == 1
     assert retained[0].is_dir()
+
+
+def test_strict_permission_failure_preserves_live_and_keeps_staged_report(
+    project: Path,
+) -> None:
+    database = project / "data/android_context.db"
+    before = _checksum(database)
+
+    result = _run(
+        project,
+        "--keep-failed-db",
+        "--strict-capability",
+        "permission_semantics",
+        FORCE_PERMISSION_FAILURE="1",
+    )
+
+    assert result.returncode != 0
+    assert _checksum(database) == before
+    assert (project / "data/workspace/marker.txt").read_text() == "old"
+    retained = [
+        Path(line)
+        for line in result.stdout.splitlines()
+        if "/data/staging/" in line
+    ]
+    assert len(retained) == 1
+    assert (
+        retained[0]
+        / "raw/permission/permission-semantics-report.json"
+    ).is_file()
 
 
 def test_plan_only_creates_no_staged_database(project: Path) -> None:

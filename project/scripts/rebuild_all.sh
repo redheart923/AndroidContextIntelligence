@@ -156,7 +156,11 @@ python -m workspace.multi_service \
 python -m workspace.multi_permission \
     --plan "$PLAN" \
     --db "$STAGED_DB" \
-    --report "$STAGED_RAW/permission/permission-enforcement-report.json"
+    --report "$STAGED_RAW/permission/permission-semantics-report.json"
+
+python -m workspace.permission_validation \
+    --db "$STAGED_DB" \
+    --report "$STAGED_RAW/permission/permission-semantics-report.json"
 
 python -m workspace.pipeline annotate \
     --plan "$PLAN" \

@@ -65,6 +65,7 @@ def test_begin_build_creates_isolated_batch(tmp_path: Path) -> None:
     assert (batch.raw / "aidl").is_dir()
     assert (batch.raw / "inheritance").is_dir()
     assert (batch.raw / "service").is_dir()
+    assert (batch.raw / "permission").is_dir()
     assert live_db.read_bytes() == b"verified"
 
 

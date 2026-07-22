@@ -14,7 +14,13 @@ from typing import Callable
 from graph.writer import GraphWriter, Node
 
 
-RAW_REPORT_DIRECTORIES = ("ctags", "aidl", "inheritance", "service")
+RAW_REPORT_DIRECTORIES = (
+    "ctags",
+    "aidl",
+    "inheritance",
+    "service",
+    "permission",
+)
 
 
 class PublicationError(RuntimeError):

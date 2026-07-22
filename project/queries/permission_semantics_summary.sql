@@ -1,0 +1,18 @@
+SELECT node_type, COUNT(*) AS node_count
+FROM node
+WHERE status = 'active'
+  AND node_type IN ('PERMISSION', 'ANDROID_PACKAGE')
+GROUP BY node_type
+ORDER BY node_type;
+
+SELECT edge_type, COUNT(*) AS edge_count
+FROM edge
+WHERE status = 'active'
+  AND edge_type IN (
+    'DECLARES_PERMISSION', 'REQUESTS_PERMISSION',
+    'ALLOWLISTS_PRIVILEGED_PERMISSION', 'DENIES_PRIVILEGED_PERMISSION',
+    'DEFAULT_GRANTS_PERMISSION', 'REQUIRES_PERMISSION',
+    'CHECKS_PERMISSION', 'ENFORCES_PERMISSION'
+  )
+GROUP BY edge_type
+ORDER BY edge_type;
