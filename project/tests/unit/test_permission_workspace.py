@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import tomllib
 from pathlib import Path
 
 from workspace.planner import build_workspace_plan
@@ -86,3 +87,11 @@ def test_non_git_repository_revision_is_unknown_only_to_reporters(
     repository.mkdir()
 
     assert resolve_repository_revision(repository) is None
+
+
+def test_canonical_frameworks_base_scope_includes_permission_policy_xml() -> None:
+    config = tomllib.loads(
+        (PROJECT_ROOT / "config/source_roots.toml").read_text(encoding="utf-8")
+    )
+
+    assert "data" in config["repositories"]["frameworks/base"]["include"]
