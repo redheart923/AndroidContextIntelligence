@@ -3,6 +3,7 @@ import tomllib
 from pathlib import Path
 from .models import ParserSpec
 
+CAPABILITY_QUALITIES = {"semantic", "heuristic", "tags_only"}
 
 BUILTINS = {
     "java": ParserSpec("java", "java_symbol_importer", True,
@@ -26,7 +27,25 @@ def load_parser_registry(path: Path) -> ParserRegistry:
         capabilities = item.get("capabilities", [])
         if not isinstance(capabilities, list) or not all(isinstance(x, str) for x in capabilities):
             raise ValueError(f"invalid capabilities for {language}")
+        quality = item.get("capability_quality", {})
+        if not isinstance(quality, dict):
+            raise ValueError(f"invalid capability quality for {language}")
+        unknown = sorted(set(quality) - set(capabilities))
+        invalid = sorted(
+            key for key, value in quality.items()
+            if not isinstance(value, str) or value not in CAPABILITY_QUALITIES
+        )
+        if unknown:
+            raise ValueError(
+                f"quality declared for unsupported capability in {language}: "
+                + ", ".join(unknown)
+            )
+        if invalid:
+            raise ValueError(
+                f"invalid capability quality for {language}: " + ", ".join(invalid)
+            )
         result[language] = ParserSpec(language=language,
             implementation=str(item.get("implementation", "")),
-            enabled=bool(item.get("enabled", False)), capabilities=tuple(capabilities))
+            enabled=bool(item.get("enabled", False)), capabilities=tuple(capabilities),
+            capability_quality=tuple(sorted(quality.items())))
     return result

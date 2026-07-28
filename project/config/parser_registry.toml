@@ -2,16 +2,28 @@
 implementation = "java_symbol_importer"
 enabled = true
 capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
+[parsers.java.capability_quality]
+symbols = "tags_only"
+inheritance = "heuristic"
+service_registration = "heuristic"
+permission_semantics = "heuristic"
 
 [parsers.aidl]
 implementation = "aidl_binder_importer"
 enabled = true
 capabilities = ["symbols", "binder"]
+[parsers.aidl.capability_quality]
+symbols = "heuristic"
+binder = "heuristic"
 
 [parsers.kotlin]
 implementation = "kotlin_ctags_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
+capabilities = ["symbols", "service_registration", "permission_semantics"]
+[parsers.kotlin.capability_quality]
+symbols = "tags_only"
+service_registration = "heuristic"
+permission_semantics = "heuristic"
 
 [parsers.c]
 implementation = ""
@@ -50,3 +62,5 @@ capabilities = []
 implementation = "xml_permission_importer"
 enabled = true
 capabilities = ["permission_semantics"]
+[parsers.xml.capability_quality]
+permission_semantics = "semantic"

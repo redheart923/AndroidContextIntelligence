@@ -86,6 +86,39 @@ capabilities = []
     assert registry.parser_for("kotlin", "symbols") is None
 
 
+def test_registry_exposes_per_capability_quality(tmp_path: Path) -> None:
+    path = tmp_path / "registry.toml"
+    path.write_text(
+        """
+[parsers.kotlin]
+implementation = "kotlin_ctags_importer"
+enabled = true
+capabilities = ["symbols", "permission_semantics"]
+
+[parsers.kotlin.capability_quality]
+symbols = "tags_only"
+permission_semantics = "heuristic"
+"""
+    )
+
+    parser = load_parser_registry(path).parser_for("kotlin", "symbols")
+
+    assert parser is not None
+    assert parser.quality_for("symbols") == "tags_only"
+    assert parser.quality_for("permission_semantics") == "heuristic"
+
+
+def test_canonical_kotlin_capabilities_do_not_claim_inheritance() -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    registry = load_parser_registry(project_root / "config/parser_registry.toml")
+    kotlin = registry["kotlin"]
+
+    assert kotlin.quality_for("symbols") == "tags_only"
+    assert kotlin.quality_for("service_registration") == "heuristic"
+    assert kotlin.quality_for("permission_semantics") == "heuristic"
+    assert registry.parser_for("kotlin", "inheritance") is None
+
+
 def test_planner_reports_unsupported_and_strict_fails(tmp_path: Path) -> None:
     aosp = tmp_path / "aosp"
     repo = aosp / "frameworks/base"
@@ -113,8 +146,11 @@ enabled = false
 capabilities = []
 ''')
     plan = build_workspace_plan(config, registry)
-    statuses = {(x.language, x.capability): x.status for x in plan.tasks}
-    assert statuses[("java", "symbols")] == "scheduled"
-    assert statuses[("kotlin", "symbols")] == "unsupported"
+    statuses = {
+        (x.language, x.capability): (x.status, x.quality)
+        for x in plan.tasks
+    }
+    assert statuses[("java", "symbols")] == ("scheduled", "semantic")
+    assert statuses[("kotlin", "symbols")] == ("unsupported", None)
     with pytest.raises(CoverageError):
         build_workspace_plan(config, registry, strict=True)

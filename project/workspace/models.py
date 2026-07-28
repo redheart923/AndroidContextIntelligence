@@ -69,6 +69,12 @@ class ParserSpec:
     implementation: str
     enabled: bool
     capabilities: tuple[str, ...]
+    capability_quality: tuple[tuple[str, str], ...] = ()
+
+    def quality_for(self, capability: str) -> str | None:
+        if capability not in self.capabilities:
+            return None
+        return dict(self.capability_quality).get(capability, "semantic")
 
 
 @dataclass(frozen=True)
@@ -80,6 +86,7 @@ class PlanTask:
     parser: str | None
     status: str
     files: int
+    quality: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
