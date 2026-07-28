@@ -70,11 +70,18 @@ def _active_semantic_rows(connection: sqlite3.Connection) -> list[sqlite3.Row]:
 
 
 def _validate_aosp_evidence(rows: list[sqlite3.Row], connection: sqlite3.Connection) -> None:
-    permission = connection.execute(
+    manage_usb_declaration = connection.execute(
         """
-        SELECT 1 FROM node
-        WHERE status='active' AND node_type='PERMISSION'
-          AND qualified_name='android.permission.MANAGE_USB'
+        SELECT 1
+        FROM edge declaration
+        JOIN node permission
+          ON permission.node_id = declaration.to_node_id
+        WHERE declaration.status='active'
+          AND declaration.edge_type='DECLARES_PERMISSION'
+          AND permission.status='active'
+          AND permission.node_type='PERMISSION'
+          AND permission.qualified_name='android.permission.MANAGE_USB'
+        LIMIT 1
         """
     ).fetchone()
     edge_types = {str(row["edge_type"]) for row in rows}
@@ -100,8 +107,8 @@ def _validate_aosp_evidence(rows: list[sqlite3.Row], connection: sqlite3.Connect
             break
     if not default_has_policy:
         gaps.append("DEFAULT_GRANT_FIXED_OR_WHITELISTED")
-    if permission is None:
-        gaps.append("android.permission.MANAGE_USB")
+    if manage_usb_declaration is None:
+        gaps.append("DECLARES_PERMISSION:android.permission.MANAGE_USB")
     if gaps:
         raise PermissionValidationError(
             "required AOSP permission evidence is missing: " + ", ".join(gaps)

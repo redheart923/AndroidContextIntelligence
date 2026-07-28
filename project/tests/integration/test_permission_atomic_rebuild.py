@@ -181,3 +181,61 @@ def test_require_aosp_evidence_rejects_incomplete_fixture(tmp_path: Path) -> Non
 
     with pytest.raises(PermissionValidationError, match="AOSP permission evidence"):
         validate_permission_database(database, require_aosp_evidence=True)
+
+
+def test_require_aosp_evidence_requires_manage_usb_declaration_edge(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "graph.db"
+    create_database(database)
+    writer = GraphWriter(database)
+    permission_id = "PERMISSION:android.permission.MANAGE_USB"
+    package_id = "ANDROID_PACKAGE:com.example"
+    method_id = "JAVA_METHOD:com.example.Service#call()"
+    writer.upsert_node(
+        Node(
+            permission_id,
+            "PERMISSION",
+            "android.permission.MANAGE_USB",
+            qualified_name="android.permission.MANAGE_USB",
+            extractor="fixture",
+        )
+    )
+    writer.upsert_node(
+        Node(
+            package_id,
+            "ANDROID_PACKAGE",
+            "com.example",
+            qualified_name="com.example",
+            extractor="fixture",
+        )
+    )
+    writer.upsert_node(
+        Node(
+            method_id,
+            "JAVA_METHOD",
+            "call",
+            qualified_name="com.example.Service#call()",
+            extractor="fixture",
+        )
+    )
+    for edge_type, owner_id, properties in (
+        ("REQUESTS_PERMISSION", package_id, {}),
+        ("ALLOWLISTS_PRIVILEGED_PERMISSION", package_id, {}),
+        ("DEFAULT_GRANTS_PERMISSION", package_id, {"fixed": False}),
+        ("CHECKS_PERMISSION", method_id, {}),
+        ("ENFORCES_PERMISSION", method_id, {}),
+    ):
+        writer.upsert_edge(
+            Edge(
+                edge_type,
+                owner_id,
+                permission_id,
+                properties=properties,
+                extractor="fixture",
+            )
+        )
+    writer.close()
+
+    with pytest.raises(PermissionValidationError, match="MANAGE_USB"):
+        validate_permission_database(database, require_aosp_evidence=True)
