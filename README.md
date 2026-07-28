@@ -216,7 +216,7 @@ bash scripts/rebuild_all.sh --keep-failed-db
 
 # 严格覆盖检查
 bash scripts/rebuild_all.sh --strict
-bash scripts/rebuild_all.sh --strict-capability permission_enforcement
+bash scripts/rebuild_all.sh --strict-capability permission_semantics
 ```
 
 数据库与报告：
@@ -276,14 +276,18 @@ WSL 中已有 JADX 1.5.6 和 A17 jar/apk 输入并不等于 Vendor 图已经可�
 规范项目测试：54 passed
 ```
 
-2026-07-21 审查时的 live 数据库仅显示 27 条 `REQUIRES_PERMISSION`、8 条 `ENFORCES_PERMISSION`，未建立 XML permission declaration 边；全部 574,399 个节点的 `source_revision` 仍为 `unknown`。因此 Permission、Vendor 和 provenance 均是后续工作，不是已完成能力。
+2026-07-21 审查时的 live 数据库仅显示 27 条 `REQUIRES_PERMISSION`、8 条
+`ENFORCES_PERMISSION`，未建立 XML permission declaration 边；全部 574,399
+个节点的 `source_revision` 仍为 `unknown`。这是 Permission Semantics Graph
+实施前的历史快照，不代表当前分支；当前 Permission 能力和验收见第 13 节。
+Vendor 原子导入和完整 provenance 仍是后续工作。
 
 其他限制：
 
 - C/C++、Rust、HIDL 目前只有语言探测，没有对应语义解析器。
 - Kotlin 使用 Ctags/启发式解析，继承和复杂语法覆盖有限。
 - 尚无精确方法调用图、Soong Build Graph、Runtime/Test Graph。
-- Permission 扫描仍缺常量表达式、多行语法和可靠方法范围。
+- Permission v0.1 仍会把无法解析的表达式、声明冲突和不支持构造显式写入报告。
 
 ## 10. 测试与开发
 
@@ -303,16 +307,59 @@ git diff --check
 ## 11. 下一步顺序
 
 1. 完成临时 WSL fresh/upgrade/verify 的非破坏性验收。
-2. 修正 Permission XML 调度、常量/多行语义和方法范围。
-3. 将 Vendor 输入移出发布输出并接入 staging、锁、验证和原子发布。
-4. 记录每个 repo revision/dirty state、JADX 版本和 artifact SHA-256。
-5. 再建设 Build Graph、增量更新、Runtime/Test Graph 和 Agent 上下文接口。
+2. 建立解析器能力质量和运行时证据门禁，避免“已调度”等同于“已覆盖”。
+3. 分离 canonical source defaults 与本地覆盖，补齐 upgrade 配置迁移。
+4. 治理跨仓库同名符号并记录 repo dirty state、工具版本和输入摘要。
+5. 将 Vendor 输入接入 staging、锁、验证和原子发布。
+6. 再建设 Build Graph、增量更新、Runtime/Test Graph 和 Agent 上下文接口。
 
 ## 12. 文档
 
 - [文档索引](doc/README.md)
 - [仓库架构审查](doc/reviews/2026-07-21-repository-architecture-review.md)
+- [Permission 后仓库架构复核](doc/reviews/2026-07-28-post-permission-repository-architecture-review.md)
+- [可信多源导入实施计划](doc/plans/2026-07-28-trustworthy-multi-source-ingestion-v01-plan.md)
 - [可信源码与安装设计](doc/designs/2026-07-21-trustworthy-source-and-installation-baseline-design.md)
 - [可信源码与安装实施计划](doc/plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)
 - [总体架构](doc/architecture/android-specific-context-graph.md)
 - [最终技术方案](doc/architecture/Android_Context_Graph_Final_Technical_Plan.md)
+
+## 13. Permission Semantics Graph v0.1
+
+`permission_semantics` 从启用仓库的 XML、Java 和 Kotlin 源码建立权限事实，覆盖：
+
+```text
+DECLARES_PERMISSION
+REQUESTS_PERMISSION
+ALLOWLISTS_PRIVILEGED_PERMISSION
+DENIES_PRIVILEGED_PERMISSION
+DEFAULT_GRANTS_PERMISSION
+REQUIRES_PERMISSION
+CHECKS_PERMISSION
+ENFORCES_PERMISSION
+```
+
+Allowlist is policy eligibility, not a runtime grant.
+Check observes or returns; enforce denies by raising an error.
+
+因此，`ALLOWLISTS_PRIVILEGED_PERMISSION` 不能解释成应用已经获得权限；
+`CHECKS_PERMISSION` 也不能与会拒绝调用的 `ENFORCES_PERMISSION` 混为一谈。
+
+严格构建、摘要查询和确定性指纹：
+
+```bash
+bash scripts/rebuild_all.sh --strict-capability permission_semantics
+sqlite3 -header -column data/android_context.db \
+  < queries/permission_semantics_summary.sql
+python -m workspace.permission_validation \
+  --db data/android_context.db \
+  --report data/raw/permission/permission-semantics-report.json \
+  --fingerprint
+```
+
+原子重建先在 `data/staging/<build-id>/raw/permission/` 生成
+`permission-semantics-report.json`，验证通过后才发布 live 数据库。
+
+现有部署执行 `--upgrade` 时会保留本地 `config/source_roots.toml`。在配置
+默认值与本地覆盖正式拆分前，请确认 `frameworks/base` 的 `include` 含
+`data`，否则 `privapp-permissions-platform.xml` 不会进入扫描范围。

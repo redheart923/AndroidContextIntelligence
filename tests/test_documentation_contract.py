@@ -8,6 +8,21 @@ ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
 PROJECT_README = ROOT / "project/README.md"
 DOC_INDEX = ROOT / "doc/README.md"
+OLD_PERMISSION_PLAN = (
+    ROOT / "doc/plans/2026-07-17-permission-enforcement-graph-v01-plan.md"
+)
+
+
+PERMISSION_EDGE_TYPES = {
+    "DECLARES_PERMISSION",
+    "REQUESTS_PERMISSION",
+    "ALLOWLISTS_PRIVILEGED_PERMISSION",
+    "DENIES_PRIVILEGED_PERMISSION",
+    "DEFAULT_GRANTS_PERMISSION",
+    "REQUIRES_PERMISSION",
+    "CHECKS_PERMISSION",
+    "ENFORCES_PERMISSION",
+}
 
 
 def test_root_readme_documents_canonical_distribution_and_commands() -> None:
@@ -54,3 +69,28 @@ def test_primary_documentation_local_links_resolve() -> None:
                 failures.append(f"{document.relative_to(ROOT)} -> {target}")
 
     assert failures == []
+
+
+def test_readmes_document_permission_semantics_contract() -> None:
+    for document in (README, PROJECT_README):
+        text = document.read_text(encoding="utf-8")
+        assert "permission_semantics" in text
+        assert "permission-semantics-report.json" in text
+        assert "Allowlist is policy eligibility, not a runtime grant." in text
+        assert "Check observes or returns; enforce denies by raising an error." in text
+        assert all(edge_type in text for edge_type in PERMISSION_EDGE_TYPES)
+
+
+def test_old_permission_plan_is_explicitly_superseded() -> None:
+    text = OLD_PERMISSION_PLAN.read_text(encoding="utf-8")
+
+    assert "Status: Superseded" in text
+    assert "../designs/2026-07-21-permission-semantics-graph-v01-design.md" in text
+    assert "2026-07-22-permission-semantics-graph-v01-plan.md" in text
+
+
+def test_documentation_index_links_permission_acceptance() -> None:
+    text = DOC_INDEX.read_text(encoding="utf-8")
+
+    assert "Permission Semantics Graph v0.1 Acceptance" in text
+    assert "reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md" in text

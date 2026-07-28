@@ -44,3 +44,10 @@ Current source modules include Java, Kotlin tag, AIDL/Binder, Java inheritance,
 service registration, Permission, atomic publication, and Vendor collection
 foundations. Presence in this payload is not a claim of complete semantic or
 live-database coverage; verified coverage is reported by each graph build.
+
+Permission Semantics Graph v0.1:
+  Capability: permission_semantics
+  Report: data/raw/permission/permission-semantics-report.json
+  Validator: python -m workspace.permission_validation
+  Queries: queries/permission_semantics_summary.sql and
+           queries/package_permission_semantics.sql

@@ -48,6 +48,41 @@ python -m compileall -q project
 bash -n project/scripts/rebuild_all.sh
 ```
 
-当前源码包含 Permission 和 Vendor 的基础采集器，但其存在不代表 live
-数据库覆盖已完成。Permission 语义、Vendor 原子导入和 source revision
-provenance 仍是下一阶段工作。
+当前源码已将 Permission Semantics Graph 接入原子重建和发布前验证。
+Vendor 原子导入、跨仓库符号冲突治理和完整 source revision provenance
+仍属于后续工作，不能因实验性入口存在就视为已完成。
+
+## Permission Semantics Graph v0.1
+
+执行计划能力名为 `permission_semantics`，产物报告为
+`data/raw/permission/permission-semantics-report.json`。正式语义边为：
+
+```text
+DECLARES_PERMISSION
+REQUESTS_PERMISSION
+ALLOWLISTS_PRIVILEGED_PERMISSION
+DENIES_PRIVILEGED_PERMISSION
+DEFAULT_GRANTS_PERMISSION
+REQUIRES_PERMISSION
+CHECKS_PERMISSION
+ENFORCES_PERMISSION
+```
+
+Allowlist is policy eligibility, not a runtime grant.
+Check observes or returns; enforce denies by raising an error.
+
+```bash
+bash scripts/rebuild_all.sh --strict-capability permission_semantics
+sqlite3 -header -column data/android_context.db \
+  < queries/permission_semantics_summary.sql
+python -m workspace.permission_validation \
+  --db data/android_context.db \
+  --report data/raw/permission/permission-semantics-report.json \
+  --fingerprint
+```
+
+验证器在原子发布前检查报告字段、八类边端点、重复 active 边和 SQLite 外键。
+
+升级安装会保留本地 `config/source_roots.toml`。现有部署必须确认
+`frameworks/base` 的 `include` 包含 `data`，才能覆盖 platform privapp
+策略；默认配置与本地覆盖的自动迁移属于下一阶段治理范围。

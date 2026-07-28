@@ -41,6 +41,9 @@
 - [Repository Architecture Review](reviews/2026-07-21-repository-architecture-review.md)：重大风险、当前修复状态、数据库证据与后续优先级。
 - [Canonical Source Drift Audit](reviews/2026-07-21-source-drift-audit.md)：从历史 WSL 生成目录迁移到 `project/` 时的逐项差异决策。
 - [Trustworthy Baseline Acceptance](reviews/2026-07-21-trustworthy-baseline-acceptance.md)：WSL 临时 fresh/verify/upgrade 验收、漂移修复、保留路径和 live 数据库未改动证据。
+- [Permission Semantics Graph v0.1 Acceptance](reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md)：Permission 语义图的测试、真实 AOSP 重建、查询和确定性证据。
+- [Post-Permission Repository Architecture Review](reviews/2026-07-28-post-permission-repository-architecture-review.md)：Permission 完成后的全仓库风险复核与下一阶段边界。
+- [Trustworthy Multi-Source Ingestion v0.1](plans/2026-07-28-trustworthy-multi-source-ingestion-v01-plan.md)：能力质量、配置迁移、符号冲突、provenance、Vendor 原子导入与性能治理计划。
 
 ## 文档分类规范
 

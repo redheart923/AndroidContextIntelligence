@@ -1,5 +1,8 @@
 # Permission Semantics Graph v0.1 Implementation Plan
 
+> **Status: Completed and accepted on 2026-07-28.** See
+> [the acceptance record](../reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build an auditable multi-repository Permission Semantics Graph covering manifest declarations and requests, privapp/default-permissions policy, and Java/Kotlin permission contracts, checks, and throwing enforcement.

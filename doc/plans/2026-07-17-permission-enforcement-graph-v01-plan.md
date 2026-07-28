@@ -1,5 +1,9 @@
 # Permission Enforcement Graph v0.1 Implementation Plan
 
+> **Status: Superseded.** Do not execute this plan. It is replaced by
+> [the approved design](../designs/2026-07-21-permission-semantics-graph-v01-design.md)
+> and [the current plan](2026-07-22-permission-semantics-graph-v01-plan.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build Phase 2a (Permission Enforcement Graph) by extracting permission declarations from XML and permission checks/annotations from Java/Kotlin source code, integrating them into the existing multi-repository workspace.
