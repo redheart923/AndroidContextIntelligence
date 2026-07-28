@@ -1,6 +1,7 @@
 # Permission Semantics Graph v0.1 Acceptance
 
-Implementation started: 2026-07-22  
+Implementation started: 2026-07-22
+
 Final verification: 2026-07-28
 
 ## Scope
