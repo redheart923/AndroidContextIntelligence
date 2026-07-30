@@ -90,6 +90,16 @@ fi
 
 bash "$CANONICAL_INSTALLER" "${install_arguments[@]}"
 
+if [[ "$MODE" == "--fresh" ]]; then
+    local_config="$PROJECT_ROOT/config/source_roots.local.toml"
+    if [[ ! -e "$local_config" ]]; then
+        escaped_aosp_root="${AOSP_ROOT//\\/\\\\}"
+        escaped_aosp_root="${escaped_aosp_root//\"/\\\"}"
+        printf '[workspace]\naosp_root = "%s"\n' "$escaped_aosp_root" \
+            > "$local_config"
+    fi
+fi
+
 if [[ "$REBUILD" -eq 1 ]]; then
     if [[ ! -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
         python3 -m venv "$PROJECT_ROOT/.venv"

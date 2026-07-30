@@ -110,8 +110,10 @@ def test_keep_failed_build_preserves_complete_batch(tmp_path: Path) -> None:
 
 def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> None:
     batch = begin_build(tmp_path, build_id="build-1")
-    source_config = tmp_path / "source_roots.toml"
+    source_config = tmp_path / "source_roots.default.toml"
     source_config.write_text("[workspace]\n", encoding="utf-8")
+    local_config = tmp_path / "source_roots.local.toml"
+    local_config.write_text("[repositories]\n", encoding="utf-8")
     create_full_node_schema(batch.database)
 
     record_graph_build(
@@ -119,12 +121,14 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         source_config,
         "2026-07-16T15:00:00Z",
         "2026-07-16T15:01:00Z",
+        local_config,
     )
     write_build_manifest(
         batch,
         source_config,
         "2026-07-16T15:00:00Z",
         "2026-07-16T15:01:00Z",
+        local_config,
     )
 
     assert read_graph_build_id(batch.database) == batch.build_id
@@ -134,6 +138,13 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
     assert manifest == {
         "build_id": "build-1",
         "source_config": str(source_config.resolve()),
+        "source_config_sha256": hashlib.sha256(
+            source_config.read_bytes()
+        ).hexdigest(),
+        "local_config": str(local_config.resolve()),
+        "local_config_sha256": hashlib.sha256(
+            local_config.read_bytes()
+        ).hexdigest(),
         "started_at": "2026-07-16T15:00:00Z",
         "status": "verified",
         "verified_at": "2026-07-16T15:01:00Z",

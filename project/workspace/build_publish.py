@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import secrets
@@ -104,6 +105,7 @@ def record_graph_build(
     source_config: Path,
     started_at: str,
     verified_at: str,
+    local_config: Path | None = None,
 ) -> None:
     writer = GraphWriter(batch.database)
     try:
@@ -115,6 +117,19 @@ def record_graph_build(
                 display_name=batch.build_id,
                 properties={
                     "source_config": str(source_config.resolve()),
+                    "source_config_sha256": hashlib.sha256(
+                        source_config.read_bytes()
+                    ).hexdigest(),
+                    "local_config": (
+                        str(local_config.resolve())
+                        if local_config is not None and local_config.is_file()
+                        else None
+                    ),
+                    "local_config_sha256": (
+                        hashlib.sha256(local_config.read_bytes()).hexdigest()
+                        if local_config is not None and local_config.is_file()
+                        else None
+                    ),
                     "started_at": started_at,
                     "verified_at": verified_at,
                 },
@@ -130,6 +145,7 @@ def write_build_manifest(
     source_config: Path,
     started_at: str,
     verified_at: str,
+    local_config: Path | None = None,
 ) -> Path:
     manifest = batch.workspace / "build-manifest.json"
     manifest.write_text(
@@ -137,6 +153,19 @@ def write_build_manifest(
             {
                 "build_id": batch.build_id,
                 "source_config": str(source_config.resolve()),
+                "source_config_sha256": hashlib.sha256(
+                    source_config.read_bytes()
+                ).hexdigest(),
+                "local_config": (
+                    str(local_config.resolve())
+                    if local_config is not None and local_config.is_file()
+                    else None
+                ),
+                "local_config_sha256": (
+                    hashlib.sha256(local_config.read_bytes()).hexdigest()
+                    if local_config is not None and local_config.is_file()
+                    else None
+                ),
                 "started_at": started_at,
                 "status": "verified",
                 "verified_at": verified_at,
@@ -430,6 +459,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     prepare = commands.add_parser("prepare", help="identify and prepare a batch")
     prepare.add_argument("--staging", type=Path, required=True)
     prepare.add_argument("--source-config", type=Path, required=True)
+    prepare.add_argument("--local-config", type=Path)
     prepare.add_argument("--started-at", required=True)
     prepare.add_argument("--verified-at", required=True)
 
@@ -457,12 +487,14 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.source_config,
             arguments.started_at,
             arguments.verified_at,
+            arguments.local_config,
         )
         write_build_manifest(
             batch,
             arguments.source_config,
             arguments.started_at,
             arguments.verified_at,
+            arguments.local_config,
         )
         prepare_staged_database(batch.database)
         return 0

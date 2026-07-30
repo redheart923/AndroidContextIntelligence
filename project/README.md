@@ -19,8 +19,17 @@ scripts/     storage/ tests/    workspace/
 .venv/  data/  caches  backups  vendor inputs  decompiler output
 ```
 
-upgrade 保留 `.venv/`、`data/`、`config/source_roots.toml` 和
+upgrade 保留 `.venv/`、`data/`、`config/source_roots.local.toml` 和
 `configs/local.yaml`。
+
+源码范围配置分为两层：
+
+- `config/source_roots.default.toml`：受 Git 与安装 manifest 管理的 canonical 基线；
+- `config/source_roots.local.toml`：本机覆盖，升级时保留且不纳入 payload hash；
+- `config/source_roots.local.toml.example`：本机覆盖示例。
+
+旧部署的 `config/source_roots.toml` 会在 upgrade staging 中校验并迁移为
+`source_roots.local.toml`；迁移失败会在发布新目录前终止。
 
 ## 部署后的命令
 
@@ -83,6 +92,6 @@ python -m workspace.permission_validation \
 
 验证器在原子发布前检查报告字段、八类边端点、重复 active 边和 SQLite 外键。
 
-升级安装会保留本地 `config/source_roots.toml`。现有部署必须确认
-`frameworks/base` 的 `include` 包含 `data`，才能覆盖 platform privapp
-策略；默认配置与本地覆盖的自动迁移属于下一阶段治理范围。
+升级安装会保留本地 `config/source_roots.local.toml`。canonical 默认配置已包含
+`frameworks/base/data`，本地 include 与 canonical 必需根按稳定并集合并，因此
+platform privapp 策略不会因旧本地覆盖而从扫描范围消失。

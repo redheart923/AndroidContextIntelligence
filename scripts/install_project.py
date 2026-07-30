@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tomllib
 from uuid import uuid4
 
 
@@ -29,9 +30,12 @@ from scripts.project_payload import (  # noqa: E402
 
 PRESERVED_RUNTIME_DIRECTORIES = ("data", ".venv")
 PRESERVED_LOCAL_FILES = (
-    "config/source_roots.toml",
+    "config/source_roots.local.toml",
     "configs/local.yaml",
 )
+LEGACY_SOURCE_CONFIG = "config/source_roots.toml"
+LOCAL_SOURCE_CONFIG = "config/source_roots.local.toml"
+DEFAULT_SOURCE_CONFIG = "config/source_roots.default.toml"
 
 
 class InstallationError(RuntimeError):
@@ -102,6 +106,27 @@ def _copy_preserved_local_files(target: Path, stage: Path) -> None:
         destination = stage / relative_name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
+    local = target / LOCAL_SOURCE_CONFIG
+    legacy = target / LEGACY_SOURCE_CONFIG
+    if not local.exists() and legacy.exists():
+        if not legacy.is_file() or legacy.is_symlink():
+            raise InstallationError(
+                f"legacy source config must be a regular file: {legacy}"
+            )
+        destination = stage / LOCAL_SOURCE_CONFIG
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy, destination)
+
+
+def _validate_staged_source_config(stage: Path) -> None:
+    from project.workspace.config import load_workspace_config
+
+    defaults = stage / DEFAULT_SOURCE_CONFIG
+    local = stage / LOCAL_SOURCE_CONFIG
+    try:
+        load_workspace_config(defaults, local if local.is_file() else None)
+    except (OSError, ValueError, tomllib.TOMLDecodeError) as error:
+        raise InstallationError(f"source config migration failed: {error}") from error
 
 
 def _create_verified_stage(
@@ -122,6 +147,7 @@ def _create_verified_stage(
             )
         if preserve_from is not None:
             _copy_preserved_local_files(preserve_from, stage)
+        _validate_staged_source_config(stage)
         manifest_path = stage / DEFAULT_MANIFEST_NAME
         write_manifest(stage, manifest_path, source_commit)
         manifest_diff = verify_manifest(stage, load_manifest(manifest_path))

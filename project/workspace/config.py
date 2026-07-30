@@ -1,4 +1,5 @@
 from __future__ import annotations
+import copy
 import tomllib
 from pathlib import Path
 from .models import ExtraRepository, RepositoryOverride, WorkspaceConfig
@@ -22,8 +23,55 @@ def _languages(value: object, field: str) -> tuple[str, ...]:
     return result
 
 
-def load_workspace_config(path: Path) -> WorkspaceConfig:
+def _ordered_union(first: object, second: object, field: str) -> list[str]:
+    values = (*_strings(first, field), *_strings(second, field))
+    return list(dict.fromkeys(values))
+
+
+def _merge_documents(base: dict, local: dict) -> dict:
+    result = copy.deepcopy(base)
+    result.setdefault("workspace", {}).update(local.get("workspace", {}))
+    default_base = result.setdefault("defaults", {})
+    default_local = local.get("defaults", {})
+    if "exclude" in default_local:
+        default_base["exclude"] = _ordered_union(
+            default_base.get("exclude"),
+            default_local.get("exclude"),
+            "defaults.exclude",
+        )
+    repositories = result.setdefault("repositories", {})
+    for repo_path, local_repo in local.get("repositories", {}).items():
+        merged = copy.deepcopy(repositories.get(repo_path, {}))
+        for field in ("include", "exclude", "languages"):
+            if field in local_repo:
+                merged[field] = _ordered_union(
+                    merged.get(field),
+                    local_repo.get(field),
+                    f"{repo_path}.{field}",
+                )
+        merged.update(
+            {
+                key: value for key, value in local_repo.items()
+                if key not in {"include", "exclude", "languages"}
+            }
+        )
+        repositories[repo_path] = merged
+    if "extra_repositories" in local:
+        result["extra_repositories"] = [
+            *result.get("extra_repositories", []),
+            *local.get("extra_repositories", []),
+        ]
+    return result
+
+
+def load_workspace_config(
+    path: Path,
+    local_path: Path | None = None,
+) -> WorkspaceConfig:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
+    if local_path is not None and local_path.is_file():
+        local = tomllib.loads(local_path.read_text(encoding="utf-8"))
+        data = _merge_documents(data, local)
     workspace = data.get("workspace", {})
     defaults = data.get("defaults", {})
     if not workspace.get("aosp_root"):

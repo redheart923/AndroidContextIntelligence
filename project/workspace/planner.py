@@ -20,8 +20,8 @@ class CoverageError(RuntimeError):
     pass
 
 
-def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = False, strict_capability: str | None = None) -> WorkspacePlan:
-    config = load_workspace_config(config_path)
+def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = False, strict_capability: str | None = None, local_config_path: Path | None = None) -> WorkspacePlan:
+    config = load_workspace_config(config_path, local_config_path)
     registry = load_parser_registry(registry_path)
     repos: dict[str, RepositorySpec] = {}
     manifest = config.aosp_root / ".repo/manifest.xml"
