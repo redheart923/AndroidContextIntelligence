@@ -66,7 +66,8 @@ def run_java(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
         subprocess.run(command, check=True)
         before = node_sources(db)
         subprocess.run(
-            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp)],
+            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp),
+             "--repository", repo["name"]],
             check=True,
             cwd=PROJECT_ROOT,
         )
@@ -91,7 +92,8 @@ def run_kotlin(plan: dict, db: Path, raw_dir: Path) -> list[dict]:
         subprocess.run(command, check=True)
         before = node_sources(db)
         subprocess.run(
-            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp), "--language", "kotlin"],
+            [sys.executable, "-m", "collectors.source.ctags_importer", str(output), str(db), str(aosp),
+             "--language", "kotlin", "--repository", repo["name"]],
             check=True,
             cwd=PROJECT_ROOT,
         )

@@ -51,6 +51,13 @@ service registration, Permission, atomic publication, and Vendor collection
 foundations. Presence in this payload is not a claim of complete semantic or
 live-database coverage; verified coverage is reported by each graph build.
 
+Repository-scoped symbol definitions:
+  Definition node: SYMBOL_DEFINITION
+  Logical link: DEFINES_SYMBOL
+  Collision report: data/workspace/symbol-collisions.json
+  Validator: python -m workspace.symbol_collision_validation
+  Query: queries/symbol_definitions.sql
+
 Permission Semantics Graph v0.1:
   Capability: permission_semantics
   Report: data/raw/permission/permission-semantics-report.json

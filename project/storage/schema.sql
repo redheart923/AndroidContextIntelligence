@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS node (
 CREATE INDEX IF NOT EXISTS idx_node_type ON node(node_type);
 CREATE INDEX IF NOT EXISTS idx_node_name ON node(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_node_source ON node(source_path);
+CREATE INDEX IF NOT EXISTS idx_node_type_name
+  ON node(node_type, qualified_name);
 
 CREATE TABLE IF NOT EXISTS edge (
   edge_id TEXT PRIMARY KEY,
@@ -44,3 +46,5 @@ CREATE TABLE IF NOT EXISTS edge (
 CREATE INDEX IF NOT EXISTS idx_edge_from ON edge(from_node_id);
 CREATE INDEX IF NOT EXISTS idx_edge_to ON edge(to_node_id);
 CREATE INDEX IF NOT EXISTS idx_edge_type ON edge(edge_type);
+CREATE INDEX IF NOT EXISTS idx_edge_type_to
+  ON edge(edge_type, to_node_id);

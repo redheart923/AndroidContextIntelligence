@@ -32,6 +32,10 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert 'STAGED_RAW="$STAGING/raw"' in script
     assert 'STAGED_RAW/permission/permission-semantics-report.json' in script
     assert "workspace.permission_validation" in script
+    assert "workspace.symbol_collision_validation" in script
+    assert script.index("workspace.symbol_collision_validation") < script.index(
+        "workspace.build_publish prepare"
+    )
     assert script.index("workspace.permission_validation") < script.index(
         "workspace.build_publish prepare"
     )

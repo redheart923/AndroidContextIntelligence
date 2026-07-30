@@ -95,3 +95,14 @@ python -m workspace.permission_validation \
 升级安装会保留本地 `config/source_roots.local.toml`。canonical 默认配置已包含
 `frameworks/base/data`，本地 include 与 canonical 必需根按稳定并集合并，因此
 platform privapp 策略不会因旧本地覆盖而从扫描范围消失。
+
+## Repository-scoped symbol definitions
+
+跨仓库同名符号使用双层身份：`SYMBOL_DEFINITION` 保存每个仓库和源码位置的定义，
+`DEFINES_SYMBOL` 指向稳定 logical symbol。`workspace.symbol_collision_validation`
+在发布前输出 `data/workspace/symbol-collisions.json`；strict 构建遇到参与语义边的
+歧义 logical symbol 会失败。
+
+使用 `queries/symbol_definitions.sql` 查看所有仓库定义。需要源码定位时应选择
+definition，语义边继续连接 logical symbol；不要把 logical node 的单一
+`source_path` 当作唯一来源。
