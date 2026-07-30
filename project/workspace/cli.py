@@ -35,7 +35,13 @@ def main() -> int:
     atomic_json(args.out_dir / "execution-plan.json", value)
     coverage = [{"repository": x["repository"], "language": x["language"],
                  "capability": x["capability"], "parser": x["parser"],
-                 "status": x["status"], "files": x["files"]} for x in value["tasks"]]
+                 "planned_status": x["status"], "status": x["status"],
+                 "quality": x["quality"], "files": x["files"],
+                 "expected_evidence": x["expected_evidence"],
+                 "observed_count": 0,
+                 "degradation_reasons": (
+                     ["not_executed"] if x["status"] == "scheduled" else []
+                 )} for x in value["tasks"]]
     atomic_json(args.out_dir / "capability-report.json", coverage)
     enabled = sum(1 for x in value["repositories"] if x["enabled"])
     unsupported = sum(1 for x in coverage if x["status"] == "unsupported")

@@ -61,7 +61,9 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
                 parser = registry.parser_for(language, capability)
                 status = "scheduled" if parser else "unsupported"
                 task = PlanTask(repo.name, repo.path, language, capability,
-                    parser.implementation if parser else None, status, count)
+                    parser.implementation if parser else None, status, count,
+                    parser.quality_for(capability) if parser else None,
+                    parser.evidence_for(capability) if parser else ())
                 tasks.append(task)
                 if status != "scheduled" and (strict_capability is None or strict_capability == capability): gaps.append(task)
     effective_strict = strict or config.strict or strict_capability is not None
