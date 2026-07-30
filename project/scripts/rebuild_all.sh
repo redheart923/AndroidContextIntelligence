@@ -2,7 +2,8 @@
 set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.toml"
+SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.default.toml"
+LOCAL_CONFIG="$PROJECT_ROOT/config/source_roots.local.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
 MODE="rebuild"
 KEEP_FAILED=0
@@ -14,6 +15,7 @@ Usage: rebuild_all.sh [OPTIONS]
 
 Options:
   --source-config FILE        Use an alternate source-roots configuration.
+  --local-config FILE         Use an alternate local override configuration.
   --discover-only             Refresh workspace discovery reports only.
   --plan-only                 Refresh the execution plan only.
   --strict                    Fail on every unsupported detected capability.
@@ -33,6 +35,11 @@ while [[ $# -gt 0 ]]; do
         --source-config)
             [[ $# -ge 2 ]] || die "--source-config requires a path"
             SOURCE_CONFIG="$2"
+            shift 2
+            ;;
+        --local-config)
+            [[ $# -ge 2 ]] || die "--local-config requires a path"
+            LOCAL_CONFIG="$2"
             shift 2
             ;;
         --discover-only)
@@ -80,6 +87,7 @@ python -m workspace.build_publish recover \
 if [[ "$MODE" == "discover" || "$MODE" == "plan" ]]; then
     python -m workspace.cli \
         --config "$SOURCE_CONFIG" \
+        --local-config "$LOCAL_CONFIG" \
         --registry "$REGISTRY" \
         --out-dir "$PROJECT_ROOT/data/workspace" \
         "${STRICT[@]}"
@@ -121,6 +129,7 @@ PLAN="$STAGED_WORKSPACE/execution-plan.json"
 
 python -m workspace.cli \
     --config "$SOURCE_CONFIG" \
+    --local-config "$LOCAL_CONFIG" \
     --registry "$REGISTRY" \
     --out-dir "$STAGED_WORKSPACE" \
     "${STRICT[@]}"
@@ -195,6 +204,7 @@ VERIFIED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 python -m workspace.build_publish prepare \
     --staging "$STAGING" \
     --source-config "$SOURCE_CONFIG" \
+    --local-config "$LOCAL_CONFIG" \
     --started-at "$STARTED_AT" \
     --verified-at "$VERIFIED_AT"
 

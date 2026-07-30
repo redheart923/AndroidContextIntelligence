@@ -34,7 +34,24 @@ def make_source(root: Path, version: str) -> Path:
         write(root, filename, f"{filename} {version}\n")
     write(root, "workspace/version.py", f'VERSION = "{version}"\n')
     write(root, "scripts/rebuild_all.sh", "#!/usr/bin/env bash\nexit 0\n")
-    write(root, "config/source_roots.toml", f'version = "{version}"\n')
+    write(
+        root,
+        "config/source_roots.default.toml",
+        f"""
+[workspace]
+aosp_root = "/home/ts/aosp"
+auto_discover_manifest = true
+strict = false
+[repositories."frameworks/base"]
+enabled = true
+include = ["core", "services", "{version}"]
+""",
+    )
+    write(
+        root,
+        "config/source_roots.local.toml.example",
+        '[workspace]\naosp_root = "/home/ts/aosp"\n',
+    )
     write(root, "configs/local.yaml", f"version: {version}\n")
     return root
 
@@ -104,7 +121,17 @@ def test_upgrade_preserves_runtime_and_local_configuration(tmp_path: Path) -> No
     assert run_cli("--fresh", "--source", str(source_v1), "--target", str(target)).returncode == 0
     write(target, "data/runtime.db", "database\n")
     write(target, ".venv/marker", "environment\n")
-    write(target, "config/source_roots.toml", "local roots\n")
+    write(
+        target,
+        "config/source_roots.local.toml",
+        """
+[workspace]
+aosp_root = "/local/aosp"
+[repositories."frameworks/base"]
+enabled = false
+include = ["local-root"]
+""",
+    )
     write(target, "configs/local.yaml", "local: true\n")
     write(target, "workspace/obsolete.py", "obsolete\n")
 
@@ -123,7 +150,12 @@ def test_upgrade_preserves_runtime_and_local_configuration(tmp_path: Path) -> No
     assert not (target / "workspace/obsolete.py").exists()
     assert (target / "data/runtime.db").read_text(encoding="utf-8") == "database\n"
     assert (target / ".venv/marker").read_text(encoding="utf-8") == "environment\n"
-    assert (target / "config/source_roots.toml").read_text(encoding="utf-8") == "local roots\n"
+    assert "local-root" in (
+        target / "config/source_roots.local.toml"
+    ).read_text(encoding="utf-8")
+    assert '"v2"' in (
+        target / "config/source_roots.default.toml"
+    ).read_text(encoding="utf-8")
     assert (target / "configs/local.yaml").read_text(encoding="utf-8") == "local: true\n"
     manifest = load_manifest(target / DEFAULT_MANIFEST_NAME)
     assert manifest.source_commit == "commit-v2"
@@ -133,6 +165,63 @@ def test_upgrade_preserves_runtime_and_local_configuration(tmp_path: Path) -> No
     assert len(rollbacks) == 1
     assert (rollbacks[0] / "workspace/version.py").read_text(encoding="utf-8") == 'VERSION = "v1"\n'
     assert not (rollbacks[0] / "data").exists()
+
+
+def test_upgrade_migrates_legacy_source_roots_to_local_override(
+    tmp_path: Path,
+) -> None:
+    source_v1 = make_source(tmp_path / "source-v1", "v1")
+    source_v2 = make_source(tmp_path / "source-v2", "v2")
+    target = tmp_path / "target"
+    assert run_cli(
+        "--fresh", "--source", str(source_v1), "--target", str(target)
+    ).returncode == 0
+    legacy = """
+[workspace]
+aosp_root = "/legacy/aosp"
+[repositories."frameworks/base"]
+enabled = false
+include = ["legacy-local-root"]
+"""
+    write(target, "config/source_roots.toml", legacy)
+
+    result = run_cli(
+        "--upgrade", "--source", str(source_v2), "--target", str(target),
+        "--source-commit", "commit-v2",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not (target / "config/source_roots.toml").exists()
+    assert (
+        target / "config/source_roots.local.toml"
+    ).read_text(encoding="utf-8") == legacy
+    assert '"v2"' in (
+        target / "config/source_roots.default.toml"
+    ).read_text(encoding="utf-8")
+
+
+def test_invalid_legacy_config_aborts_upgrade_without_touching_target(
+    tmp_path: Path,
+) -> None:
+    source_v1 = make_source(tmp_path / "source-v1", "v1")
+    source_v2 = make_source(tmp_path / "source-v2", "v2")
+    target = tmp_path / "target"
+    assert run_cli(
+        "--fresh", "--source", str(source_v1), "--target", str(target)
+    ).returncode == 0
+    write(target, "config/source_roots.toml", "[workspace\ninvalid")
+
+    result = run_cli(
+        "--upgrade", "--source", str(source_v2), "--target", str(target),
+        "--source-commit", "commit-v2",
+    )
+
+    assert result.returncode == 2
+    assert (target / "workspace/version.py").read_text(encoding="utf-8") == (
+        'VERSION = "v1"\n'
+    )
+    assert (target / "config/source_roots.toml").is_file()
+    assert list(tmp_path.glob(".install-staging-target-*")) == []
 
 
 def test_upgrade_restores_original_target_when_promotion_fails(

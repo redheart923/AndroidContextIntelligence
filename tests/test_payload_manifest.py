@@ -90,3 +90,22 @@ def test_verify_manifest_classifies_installed_drift(tmp_path: Path) -> None:
     assert diff.added == ("workspace/added.py",)
     assert diff.removed == ("workspace/removed.py",)
     assert diff.modified == ("workspace/modified.py",)
+
+
+def test_local_source_roots_override_is_not_managed_payload(tmp_path: Path) -> None:
+    payload = tmp_path / "payload"
+    write(
+        payload,
+        "config/source_roots.default.toml",
+        "[workspace]\naosp_root='/aosp'\n",
+    )
+    write(
+        payload,
+        "config/source_roots.local.toml",
+        "[workspace]\naosp_root='/local'\n",
+    )
+
+    hashes = project_payload.payload_hashes(payload)
+
+    assert "config/source_roots.default.toml" in hashes
+    assert "config/source_roots.local.toml" not in hashes

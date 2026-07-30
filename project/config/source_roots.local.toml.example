@@ -1,0 +1,8 @@
+# Copy this file to source_roots.local.toml for machine-specific overrides.
+# The local file is preserved during upgrades and excluded from payload hashes.
+[workspace]
+aosp_root = "/home/ts/aosp"
+
+# [repositories."packages/modules/Permission"]
+# enabled = true
+# languages = ["java", "kotlin", "aidl"]

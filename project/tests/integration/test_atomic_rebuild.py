@@ -82,6 +82,7 @@ from pathlib import Path
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True)
+parser.add_argument("--local-config")
 parser.add_argument("--registry", required=True)
 parser.add_argument("--out-dir", type=Path, required=True)
 parser.add_argument("--strict", action="store_true")
@@ -225,7 +226,7 @@ def project(tmp_path: Path) -> Path:
     shutil.copy2(CANONICAL_SCRIPT, root / "scripts" / "rebuild_all.sh")
     _write(root / ".venv/bin/activate", "")
     _write(root / "storage/schema.sql", SCHEMA)
-    _write(root / "config/source_roots.toml", "[workspace]\n")
+    _write(root / "config/source_roots.default.toml", "[workspace]\n")
     _write(root / "config/parser_registry.toml", "[parsers]\n")
     _write(root / "workspace/cli.py", CLI_STUB)
     _write(root / "workspace/pipeline.py", PIPELINE_STUB)

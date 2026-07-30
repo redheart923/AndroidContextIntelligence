@@ -31,8 +31,14 @@ files.
 Preserved upgrade paths:
   .venv/
   data/
-  config/source_roots.toml
+  config/source_roots.local.toml
   configs/local.yaml
+
+Source configuration:
+  config/source_roots.default.toml is the managed canonical baseline.
+  config/source_roots.local.toml.example documents machine-local overrides.
+  config/source_roots.local.toml is unmanaged and preserved during upgrade.
+  Legacy config/source_roots.toml is migrated to the local override on upgrade.
 
 Runtime databases, reports, virtual environments, caches, backups, vendor
 inputs, and decompiler output are not part of this canonical payload.

@@ -33,6 +33,48 @@ enabled = true
     assert value.extra_repositories[0].name == "local-extension"
 
 
+def test_local_config_overlays_defaults_without_dropping_required_roots(
+    tmp_path: Path,
+) -> None:
+    defaults = tmp_path / "source_roots.default.toml"
+    local = tmp_path / "source_roots.local.toml"
+    defaults.write_text(
+        """
+[workspace]
+aosp_root = "/canonical/aosp"
+auto_discover_manifest = true
+strict = false
+[defaults]
+exclude = ["tests"]
+[repositories."frameworks/base"]
+enabled = true
+include = ["core", "services", "data"]
+exclude = ["benchmarks"]
+"""
+    )
+    local.write_text(
+        """
+[workspace]
+aosp_root = "/local/aosp"
+[repositories."frameworks/base"]
+enabled = false
+include = ["vendor-extension"]
+exclude = ["local-tests"]
+"""
+    )
+
+    value = load_workspace_config(defaults, local)
+
+    assert value.aosp_root == Path("/local/aosp")
+    assert value.repositories["frameworks/base"].enabled is False
+    assert value.repositories["frameworks/base"].include == (
+        "core", "services", "data", "vendor-extension",
+    )
+    assert value.repositories["frameworks/base"].exclude == (
+        "benchmarks", "local-tests",
+    )
+
+
 def test_manifest_include_and_cycle_detection(tmp_path: Path) -> None:
     root = tmp_path / "manifest.xml"
     child = tmp_path / "child.xml"

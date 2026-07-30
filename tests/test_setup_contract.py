@@ -52,6 +52,9 @@ def test_fresh_and_verify_only_work_without_aosp_or_stdin(tmp_path: Path) -> Non
     assert fresh.returncode == 0, fresh.stderr
     assert verify.returncode == 0, verify.stderr
     assert (target / "workspace/cli.py").is_file()
+    local_config = target / "config/source_roots.local.toml"
+    assert local_config.is_file()
+    assert str(missing_aosp) in local_config.read_text(encoding="utf-8")
     assert not (target / ".venv").exists()
     assert "PASS" in verify.stdout
 

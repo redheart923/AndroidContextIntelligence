@@ -31,7 +31,7 @@ AndroidContextIntelligence/
 主数据流：
 
 ```text
-AOSP repo manifest + source_roots.toml
+AOSP repo manifest + source_roots.default.toml + source_roots.local.toml
                 │
                 ▼
 仓库发现 → 语言清单 → 解析器能力矩阵 → execution plan
@@ -53,7 +53,7 @@ AOSP repo manifest + source_roots.toml
 - `project/` 是唯一规范源码；安装器不再保存 heredoc/base64 的第二份源码。
 - payload 使用稳定相对路径和 SHA-256 清单管理。
 - fresh 在目标同父目录 staging 并验证后 rename；已有目标不会被覆盖。
-- upgrade 保留 `.venv/`、`data/`、`config/source_roots.toml` 和 `configs/local.yaml`，同时保留旧源码 rollback。
+- upgrade 保留 `.venv/`、`data/`、`config/source_roots.local.toml` 和 `configs/local.yaml`，同时保留旧源码 rollback。
 - WSL 部署目录不得反向同步为源码，也不是测试输入。
 - 图层“代码已存在”不表示语义覆盖已经达标；以构建报告和数据库查询为准。
 
@@ -241,7 +241,8 @@ sqlite3 data/android_context.db 'PRAGMA foreign_key_check;'
 
 ## 7. 添加其他 AOSP 仓库
 
-编辑部署目录中的 `config/source_roots.toml`；该文件在 upgrade 时保留。
+复制 `config/source_roots.local.toml.example` 为
+`config/source_roots.local.toml` 后编辑；该文件在 upgrade 时保留。
 
 ```toml
 [repositories."packages/modules/Permission"]
@@ -360,6 +361,7 @@ python -m workspace.permission_validation \
 原子重建先在 `data/staging/<build-id>/raw/permission/` 生成
 `permission-semantics-report.json`，验证通过后才发布 live 数据库。
 
-现有部署执行 `--upgrade` 时会保留本地 `config/source_roots.toml`。在配置
-默认值与本地覆盖正式拆分前，请确认 `frameworks/base` 的 `include` 含
-`data`，否则 `privapp-permissions-platform.xml` 不会进入扫描范围。
+现有部署执行 `--upgrade` 时会把旧 `config/source_roots.toml` 校验并迁移为
+`config/source_roots.local.toml`。canonical 默认值位于
+`config/source_roots.default.toml`，并始终包含 `frameworks/base/data`；本地
+include/exclude/languages 选择在升级后继续保留。
