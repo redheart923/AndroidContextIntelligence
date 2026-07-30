@@ -81,3 +81,52 @@ def test_fact_source_revision_overrides_writer_fallback(tmp_path: Path) -> None:
             "SELECT source_revision FROM edge WHERE edge_type=?",
             ("REQUESTS_PERMISSION",),
         ).fetchone() == ("edge-revision",)
+
+
+def test_repository_scoped_definitions_preserve_duplicate_logical_symbol(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "graph.db"
+    create_database(database)
+    writer = GraphWriter(database)
+    logical = Node(
+        node_id="JAVA_CLASS:common.Duplicate",
+        node_type="JAVA_CLASS",
+        qualified_name="common.Duplicate",
+        display_name="Duplicate",
+    )
+    writer.upsert_node(logical)
+    first = writer.upsert_symbol_definition(
+        logical,
+        repository="frameworks/base",
+        source_path="frameworks/base/Duplicate.java",
+        line_start=1,
+        line_end=3,
+    )
+    second = writer.upsert_symbol_definition(
+        logical,
+        repository="vendor/demo",
+        source_path="vendor/demo/Duplicate.java",
+        line_start=1,
+        line_end=3,
+    )
+    writer.close()
+
+    assert first != second
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM node WHERE node_type='SYMBOL_DEFINITION'"
+        ).fetchone() == (2,)
+        properties = connection.execute(
+            "SELECT properties_json FROM node WHERE node_id=?",
+            (logical.node_id,),
+        ).fetchone()[0]
+        assert '"definition_resolution": "ambiguous"' in properties
+        assert '"definition_count": 2' in properties
+        assert connection.execute(
+            """
+            SELECT COUNT(*) FROM edge
+            WHERE edge_type='DEFINES_SYMBOL'
+              AND to_node_id='JAVA_CLASS:common.Duplicate'
+            """
+        ).fetchone() == (2,)

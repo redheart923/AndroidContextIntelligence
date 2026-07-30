@@ -347,6 +347,7 @@ def first_pass(
     db_path: Path,
     source_root: Path,
     kind_map: dict[str, str] | None = None,
+    repository: str = "unknown",
 ) -> tuple[int, int]:
     active_kind_map = kind_map if kind_map is not None else KIND_MAP
 
@@ -398,6 +399,13 @@ def first_pass(
                 extractor="universal-ctags-v0.2.1",
             )
             writer.upsert_node(node)
+            writer.upsert_symbol_definition(
+                node,
+                repository=repository,
+                source_path=source_path,
+                line_start=line_start,
+                line_end=line_end,
+            )
 
             file_id = stable_id("FILE", source_path)
             writer.upsert_node(
@@ -523,6 +531,7 @@ def main() -> int:
     parser.add_argument("db_path", type=Path)
     parser.add_argument("source_root", type=Path)
     parser.add_argument("--language", choices=["java", "kotlin"], default="java")
+    parser.add_argument("--repository", default="unknown")
     args = parser.parse_args()
 
     kind_map = KOTLIN_KIND_MAP if args.language == "kotlin" else KIND_MAP
@@ -533,6 +542,7 @@ def main() -> int:
         args.db_path,
         args.source_root,
         kind_map=kind_map,
+        repository=args.repository,
     )
     owner_edges, missing_owner = second_pass(
         args.ctags_jsonl,

@@ -83,3 +83,57 @@ enabled = true
         assert connection.execute("SELECT 1 FROM edge WHERE edge_type='EXTENDS' AND source_path LIKE 'vendor/demo/%'").fetchone()
         assert connection.execute("SELECT 1 FROM node WHERE node_type='BINDER_SERVICE_NAME' AND qualified_name='vendor.demo'").fetchone()
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_duplicate_qname_preserves_both_repository_definitions(
+    tmp_path: Path,
+) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    aosp = tmp_path / "aosp"
+    base = aosp / "frameworks/base"
+    vendor = aosp / "vendor/demo"
+    base.mkdir(parents=True)
+    vendor.mkdir(parents=True)
+    for root in (base, vendor):
+        (root / "Duplicate.java").write_text(
+            "package common; public class Duplicate {}\n",
+            encoding="utf-8",
+        )
+    config = tmp_path / "roots.toml"
+    config.write_text(
+        f"""
+[workspace]
+aosp_root = "{aosp}"
+auto_discover_manifest = false
+[repositories."frameworks/base"]
+enabled = true
+[repositories."vendor/demo"]
+enabled = true
+""",
+        encoding="utf-8",
+    )
+    plan = build_workspace_plan(
+        config,
+        project_root / "config/parser_registry.toml",
+    )
+    database = tmp_path / "graph.db"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            (project_root / "storage/schema.sql").read_text(encoding="utf-8")
+        )
+
+    run_java(plan.to_dict(), database, tmp_path / "ctags")
+
+    with sqlite3.connect(database) as connection:
+        definitions = connection.execute(
+            """
+            SELECT json_extract(definition.properties_json, '$.repository')
+            FROM node definition
+            JOIN edge link ON link.from_node_id=definition.node_id
+            WHERE definition.node_type='SYMBOL_DEFINITION'
+              AND link.edge_type='DEFINES_SYMBOL'
+              AND link.to_node_id='JAVA_CLASS:common.Duplicate'
+            ORDER BY 1
+            """
+        ).fetchall()
+    assert definitions == [("frameworks/base",), ("vendor/demo",)]

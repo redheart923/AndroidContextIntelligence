@@ -175,6 +175,11 @@ python -m workspace.pipeline annotate \
     --plan "$PLAN" \
     --db "$STAGED_DB"
 
+python -m workspace.symbol_collision_validation \
+    --db "$STAGED_DB" \
+    --plan "$PLAN" \
+    --report "$STAGED_WORKSPACE/symbol-collisions.json"
+
 python -m workspace.coverage_validation \
     --plan "$PLAN" \
     --db "$STAGED_DB" \

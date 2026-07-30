@@ -140,6 +140,96 @@ class GraphWriter:
             ),
         )
 
+    def upsert_symbol_definition(
+        self,
+        logical_node: Node,
+        *,
+        repository: str,
+        source_path: str,
+        line_start: int | None,
+        line_end: int | None,
+    ) -> str:
+        identity = "|".join(
+            [
+                repository,
+                source_path,
+                str(line_start or ""),
+                str(line_end or ""),
+                logical_node.node_id,
+            ]
+        )
+        definition_id = stable_id("SYMBOL_DEFINITION", stable_hash(identity))
+        self.upsert_node(
+            Node(
+                node_id=definition_id,
+                node_type="SYMBOL_DEFINITION",
+                qualified_name=logical_node.qualified_name,
+                display_name=logical_node.display_name,
+                properties={
+                    "repository": repository,
+                    "logical_node_id": logical_node.node_id,
+                    "logical_node_type": logical_node.node_type,
+                },
+                source_path=source_path,
+                line_start=line_start,
+                line_end=line_end,
+                extractor=logical_node.extractor,
+                source_revision=logical_node.source_revision,
+            )
+        )
+        self.upsert_edge(
+            Edge(
+                edge_type="DEFINES_SYMBOL",
+                from_node_id=definition_id,
+                to_node_id=logical_node.node_id,
+                properties={"repository": repository},
+                source_path=source_path,
+                line_start=line_start,
+                line_end=line_end,
+                extractor=logical_node.extractor,
+                source_revision=logical_node.source_revision,
+            )
+        )
+        rows = self.c.execute(
+            """
+            SELECT definition.properties_json
+            FROM edge link
+            JOIN node definition ON definition.node_id=link.from_node_id
+            WHERE link.edge_type='DEFINES_SYMBOL'
+              AND link.to_node_id=?
+            """,
+            (logical_node.node_id,),
+        ).fetchall()
+        repositories = {
+            json.loads(raw).get("repository") for (raw,) in rows
+        }
+        logical_raw = self.c.execute(
+            "SELECT properties_json FROM node WHERE node_id=?",
+            (logical_node.node_id,),
+        ).fetchone()
+        logical_properties = json.loads(logical_raw[0] if logical_raw else "{}")
+        logical_properties.update(
+            {
+                "definition_count": len(rows),
+                "definition_repository_count": len(repositories),
+                "definition_resolution": (
+                    "ambiguous" if len(repositories) > 1 else "unique"
+                ),
+            }
+        )
+        self.c.execute(
+            "UPDATE node SET properties_json=? WHERE node_id=?",
+            (
+                json.dumps(
+                    logical_properties,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                logical_node.node_id,
+            ),
+        )
+        return definition_id
+
     def upsert_edge(self, edge: Edge) -> None:
         effective_revision = edge.source_revision or self.source_revision
         properties_json = json.dumps(
