@@ -108,6 +108,29 @@ permission_semantics = "heuristic"
     assert parser.quality_for("permission_semantics") == "heuristic"
 
 
+def test_registry_exposes_required_runtime_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "registry.toml"
+    path.write_text(
+        """
+[parsers.java]
+implementation = "java_symbol_importer"
+enabled = true
+capabilities = ["symbols"]
+
+[parsers.java.capability_quality]
+symbols = "tags_only"
+
+[parsers.java.capability_evidence]
+symbols = ["node_type_prefix:JAVA_"]
+"""
+    )
+
+    parser = load_parser_registry(path).parser_for("java", "symbols")
+
+    assert parser is not None
+    assert parser.evidence_for("symbols") == ("node_type_prefix:JAVA_",)
+
+
 def test_canonical_kotlin_capabilities_do_not_claim_inheritance() -> None:
     project_root = Path(__file__).resolve().parents[2]
     registry = load_parser_registry(project_root / "config/parser_registry.toml")

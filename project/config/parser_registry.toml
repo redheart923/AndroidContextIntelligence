@@ -7,6 +7,11 @@ symbols = "tags_only"
 inheritance = "heuristic"
 service_registration = "heuristic"
 permission_semantics = "heuristic"
+[parsers.java.capability_evidence]
+symbols = ["node_type_prefix:JAVA_"]
+inheritance = ["edge_type:EXTENDS", "edge_type:IMPLEMENTS_JAVA_INTERFACE"]
+service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_SERVICE"]
+permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
 
 [parsers.aidl]
 implementation = "aidl_binder_importer"
@@ -15,6 +20,9 @@ capabilities = ["symbols", "binder"]
 [parsers.aidl.capability_quality]
 symbols = "heuristic"
 binder = "heuristic"
+[parsers.aidl.capability_evidence]
+symbols = ["node_type_prefix:AIDL_"]
+binder = ["edge_type_any_source:IMPLEMENTS_BINDER"]
 
 [parsers.kotlin]
 implementation = "kotlin_ctags_importer"
@@ -24,6 +32,10 @@ capabilities = ["symbols", "service_registration", "permission_semantics"]
 symbols = "tags_only"
 service_registration = "heuristic"
 permission_semantics = "heuristic"
+[parsers.kotlin.capability_evidence]
+symbols = ["node_type_prefix:KOTLIN_"]
+service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_SERVICE"]
+permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
 
 [parsers.c]
 implementation = ""
@@ -64,3 +76,5 @@ enabled = true
 capabilities = ["permission_semantics"]
 [parsers.xml.capability_quality]
 permission_semantics = "semantic"
+[parsers.xml.capability_evidence]
+permission_semantics = ["edge_type:DECLARES_PERMISSION", "edge_type:REQUESTS_PERMISSION", "edge_type:ALLOWLISTS_PRIVILEGED_PERMISSION", "edge_type:DENIES_PRIVILEGED_PERMISSION", "edge_type:DEFAULT_GRANTS_PERMISSION"]

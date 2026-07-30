@@ -70,11 +70,15 @@ class ParserSpec:
     enabled: bool
     capabilities: tuple[str, ...]
     capability_quality: tuple[tuple[str, str], ...] = ()
+    capability_evidence: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def quality_for(self, capability: str) -> str | None:
         if capability not in self.capabilities:
             return None
         return dict(self.capability_quality).get(capability, "semantic")
+
+    def evidence_for(self, capability: str) -> tuple[str, ...]:
+        return dict(self.capability_evidence).get(capability, ())
 
 
 @dataclass(frozen=True)
@@ -87,9 +91,12 @@ class PlanTask:
     status: str
     files: int
     quality: str | None = None
+    expected_evidence: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return self.__dict__.copy()
+        value = self.__dict__.copy()
+        value["expected_evidence"] = list(self.expected_evidence)
+        return value
 
 
 @dataclass(frozen=True)

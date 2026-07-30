@@ -44,8 +44,31 @@ def load_parser_registry(path: Path) -> ParserRegistry:
             raise ValueError(
                 f"invalid capability quality for {language}: " + ", ".join(invalid)
             )
+        evidence = item.get("capability_evidence", {})
+        if not isinstance(evidence, dict):
+            raise ValueError(f"invalid capability evidence for {language}")
+        unknown_evidence = sorted(set(evidence) - set(capabilities))
+        invalid_evidence = sorted(
+            key for key, value in evidence.items()
+            if not isinstance(value, list)
+            or not value
+            or not all(isinstance(entry, str) and entry for entry in value)
+        )
+        if unknown_evidence:
+            raise ValueError(
+                f"evidence declared for unsupported capability in {language}: "
+                + ", ".join(unknown_evidence)
+            )
+        if invalid_evidence:
+            raise ValueError(
+                f"invalid capability evidence for {language}: "
+                + ", ".join(invalid_evidence)
+            )
         result[language] = ParserSpec(language=language,
             implementation=str(item.get("implementation", "")),
             enabled=bool(item.get("enabled", False)), capabilities=tuple(capabilities),
-            capability_quality=tuple(sorted(quality.items())))
+            capability_quality=tuple(sorted(quality.items())),
+            capability_evidence=tuple(
+                sorted((key, tuple(value)) for key, value in evidence.items())
+            ))
     return result

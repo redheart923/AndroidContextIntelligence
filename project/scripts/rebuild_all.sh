@@ -166,6 +166,11 @@ python -m workspace.pipeline annotate \
     --plan "$PLAN" \
     --db "$STAGED_DB"
 
+python -m workspace.coverage_validation \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --report "$STAGED_WORKSPACE/capability-report.json"
+
 FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
 if [[ -n "$FK_ERRORS" ]]; then
     printf '%s\n' "$FK_ERRORS" >&2
