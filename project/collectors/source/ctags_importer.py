@@ -348,10 +348,11 @@ def first_pass(
     source_root: Path,
     kind_map: dict[str, str] | None = None,
     repository: str = "unknown",
+    source_revision: str = "unknown",
 ) -> tuple[int, int]:
     active_kind_map = kind_map if kind_map is not None else KIND_MAP
 
-    writer = GraphWriter(db_path)
+    writer = GraphWriter(db_path, source_revision=source_revision)
     imported = 0
     skipped = 0
 
@@ -444,11 +445,12 @@ def second_pass(
     source_root: Path,
     kind_map: dict[str, str] | None = None,
     owner_kind_map: dict[str, str] | None = None,
+    source_revision: str = "unknown",
 ) -> tuple[int, int]:
     active_kind_map = kind_map if kind_map is not None else KIND_MAP
     active_owner_kind_map = owner_kind_map if owner_kind_map is not None else OWNER_KIND_MAP
     owner_ids = collect_owner_ids(db_path, active_owner_kind_map)
-    writer = GraphWriter(db_path)
+    writer = GraphWriter(db_path, source_revision=source_revision)
     inserted = 0
     missing_owner = 0
 
@@ -532,6 +534,7 @@ def main() -> int:
     parser.add_argument("source_root", type=Path)
     parser.add_argument("--language", choices=["java", "kotlin"], default="java")
     parser.add_argument("--repository", default="unknown")
+    parser.add_argument("--source-revision", default="unknown")
     args = parser.parse_args()
 
     kind_map = KOTLIN_KIND_MAP if args.language == "kotlin" else KIND_MAP
@@ -543,6 +546,7 @@ def main() -> int:
         args.source_root,
         kind_map=kind_map,
         repository=args.repository,
+        source_revision=args.source_revision,
     )
     owner_edges, missing_owner = second_pass(
         args.ctags_jsonl,
@@ -550,6 +554,7 @@ def main() -> int:
         args.source_root,
         kind_map=kind_map,
         owner_kind_map=owner_kind_map,
+        source_revision=args.source_revision,
     )
 
     print(

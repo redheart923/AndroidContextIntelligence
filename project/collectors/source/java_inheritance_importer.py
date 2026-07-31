@@ -303,13 +303,15 @@ def main() -> int:
         type=Path,
         required=True,
     )
+    parser.add_argument("--source-revision", default="unknown")
+    parser.add_argument("--artifact-sha")
     args = parser.parse_args()
 
     with sqlite3.connect(args.db) as connection:
         types = load_types(connection)
 
     index = TypeIndex(types)
-    writer = GraphWriter(args.db)
+    writer = GraphWriter(args.db, source_revision=args.source_revision)
 
     resolved: list[dict[str, object]] = []
     unresolved: list[dict[str, object]] = []
@@ -428,6 +430,11 @@ def main() -> int:
                             properties={
                                 "source_field": "ctags.inherits",
                                 "direct": True,
+                                **(
+                                    {"artifact_sha256": args.artifact_sha}
+                                    if args.artifact_sha
+                                    else {}
+                                ),
                             },
                             source_path=source_path,
                             line_start=line,

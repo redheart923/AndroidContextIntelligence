@@ -33,6 +33,12 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert 'STAGED_RAW/permission/permission-semantics-report.json' in script
     assert "workspace.permission_validation" in script
     assert "workspace.symbol_collision_validation" in script
+    assert "--vendor-input" in script
+    assert "workspace.vendor_artifacts prepare" in script
+    assert "workspace.multi_vendor" in script
+    assert '--staging-root "$STAGING"' in script
+    assert 'VENDOR_MANIFEST="$STAGED_WORKSPACE/vendor-artifacts.json"' in script
+    assert '--vendor-manifest "$VENDOR_MANIFEST"' in script
     assert "workspace.provenance collect" in script
     assert "workspace.provenance validate" in script
     assert '--provenance "$STAGED_WORKSPACE/provenance.json"' in script
@@ -41,6 +47,9 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     )
     assert script.index("workspace.provenance validate") < script.index(
         "workspace.build_publish prepare"
+    )
+    assert script.index("workspace.multi_vendor") < script.index(
+        "workspace.provenance collect"
     )
     assert script.index("workspace.permission_validation") < script.index(
         "workspace.build_publish prepare"
@@ -209,6 +218,29 @@ if os.environ.get("FORCE_PERMISSION_FAILURE") == "1":
 '''
 
 
+MULTI_VENDOR_STUB = r'''from __future__ import annotations
+import argparse
+import json
+import os
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--manifest")
+parser.add_argument("--db")
+parser.add_argument("--staging-root")
+parser.add_argument("--ctags-dir")
+parser.add_argument("--report", type=Path, required=True)
+args = parser.parse_args()
+if os.environ.get("FORCE_VENDOR_FAILURE") == "1":
+    raise SystemExit(23)
+args.report.parent.mkdir(parents=True, exist_ok=True)
+args.report.write_text(
+    json.dumps({"summary": {"artifacts_imported": 0}}) + "\n",
+    encoding="utf-8",
+)
+'''
+
+
 def _write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -252,6 +284,7 @@ def project(tmp_path: Path) -> Path:
     _write(root / "workspace/multi_aidl.py", REPORT_STUB)
     _write(root / "workspace/multi_service.py", REPORT_STUB)
     _write(root / "workspace/multi_permission.py", PERMISSION_REPORT_STUB)
+    _write(root / "workspace/multi_vendor.py", MULTI_VENDOR_STUB)
     data = root / "data"
     data.mkdir()
     _seed_database(data / "android_context.db", "old")
@@ -289,6 +322,18 @@ def test_forced_importer_failure_preserves_live_batch(project: Path) -> None:
     assert (project / "data/raw/marker.txt").read_text() == "old"
     staging = project / "data/staging"
     assert not staging.exists() or not any(staging.iterdir())
+
+
+def test_forced_vendor_failure_preserves_live_batch(project: Path) -> None:
+    database = project / "data/android_context.db"
+    before = _checksum(database)
+
+    result = _run(project, FORCE_VENDOR_FAILURE="1")
+
+    assert result.returncode != 0
+    assert _checksum(database) == before
+    assert (project / "data/workspace/marker.txt").read_text() == "old"
+    assert (project / "data/raw/marker.txt").read_text() == "old"
 
 
 def test_keep_failed_retains_and_prints_staging_batch(project: Path) -> None:

@@ -122,6 +122,12 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "tools": {},
     }
     provenance.write_text(json.dumps(provenance_payload), encoding="utf-8")
+    vendor_manifest = tmp_path / "vendor-artifacts.json"
+    vendor_payload = {
+        "schema_version": "1.0",
+        "artifacts": [{"artifact_sha256": "a" * 64, "status": "prepared"}],
+    }
+    vendor_manifest.write_text(json.dumps(vendor_payload), encoding="utf-8")
     create_full_node_schema(batch.database)
 
     record_graph_build(
@@ -131,6 +137,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "2026-07-16T15:01:00Z",
         local_config,
         provenance,
+        vendor_manifest,
     )
     write_build_manifest(
         batch,
@@ -139,6 +146,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "2026-07-16T15:01:00Z",
         local_config,
         provenance,
+        vendor_manifest,
     )
 
     assert read_graph_build_id(batch.database) == batch.build_id
@@ -158,6 +166,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
             separators=(",", ":"),
         ).encode("utf-8")
     ).hexdigest()
+    assert graph_properties["vendor_artifacts"] == vendor_payload
     manifest = json.loads(
         (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
     )
@@ -179,6 +188,10 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
+        ).hexdigest(),
+        "vendor_artifacts": vendor_payload,
+        "vendor_artifacts_sha256": hashlib.sha256(
+            vendor_manifest.read_bytes()
         ).hexdigest(),
         "started_at": "2026-07-16T15:00:00Z",
         "status": "verified",

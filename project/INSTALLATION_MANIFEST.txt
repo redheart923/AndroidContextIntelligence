@@ -48,8 +48,10 @@ Canonical rebuild entry point:
 
 Current source modules include Java, Kotlin tag, AIDL/Binder, Java inheritance,
 service registration, Permission, atomic publication, and Vendor collection
-foundations. Presence in this payload is not a claim of complete semantic or
-live-database coverage; verified coverage is reported by each graph build.
+and staged artifact ingestion. Vendor inputs remain outside data/, decompiled
+outputs use a content-addressed cache, and publication records artifact and
+tool provenance. Presence in this payload is not a claim of complete semantic
+coverage; verified coverage is reported by each graph build.
 
 Repository-scoped symbol definitions:
   Definition node: SYMBOL_DEFINITION
