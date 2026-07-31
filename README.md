@@ -195,7 +195,7 @@ bash ./setup.sh --fresh
 | `scripts/verify_project_install.py` | 校验已安装 managed payload | 检查 WSL 是否被直接修改 |
 | `project/scripts/rebuild_all.sh` | 多仓库计划、各解析器、验证和原子发布 | 安装后日常重建 |
 | `installers/install_*_v01.sh` | 兼容旧命令，默认转发 `--upgrade` | 仅用于迁移旧自动化，后续删除 |
-| `project/scripts/import_vendor.sh` | 当前实验性 Vendor 反编译/导入入口 | 仅在数据库副本上验证，见风险说明 |
+| `project/scripts/import_vendor.sh` | Vendor 兼容入口，转发到 canonical staged rebuild | 旧自动化迁移；不直接写 live DB |
 
 ## 6. 安装后的常用命令
 
@@ -217,6 +217,11 @@ bash scripts/rebuild_all.sh --keep-failed-db
 # 严格覆盖检查
 bash scripts/rebuild_all.sh --strict
 bash scripts/rebuild_all.sh --strict-capability permission_semantics
+
+# 将 data/ 外部的 APK/JAR 纳入同一次原子重建
+bash scripts/rebuild_all.sh \
+  --vendor-input /home/ts/vendor-input \
+  --jadx-bin /home/ts/jadx-1.5.6/bin/jadx
 ```
 
 数据库与报告：
@@ -257,16 +262,29 @@ exclude = ["tests", "prebuilt", "generated"]
 
 未支持语言不会静默当作成功：默认写入能力报告并继续，`--strict` 或 `--strict-capability` 可使覆盖缺口失败。
 
-## 8. Vendor/JADX 当前边界
+## 8. Vendor/JADX staged 导入
 
-WSL 中已有 JADX 1.5.6 和 A17 jar/apk 输入并不等于 Vendor 图已经可靠发布。当前 `import_vendor.sh` 仍有以下未解决风险：
+Vendor 输入目录必须位于 `data/` 外。默认目录为 `vendor-input/`，默认内容寻址
+缓存为 `.cache/vendor-artifacts/`；两者都不是受管 payload，也不会作为 live
+报告发布。缓存键由 artifact SHA-256、JADX 路径/版本和反编译选项共同决定。
 
-- 直接修改 live SQLite，而不是进入 rebuild staging/lock/atomic publish；
-- 输入、反编译缓存与生成报告的生命周期未完全分离；
-- 尚未用 artifact SHA-256 + JADX 版本/状态决定缓存复用；
-- 现有 live 数据库没有证据支持历史 README 的大规模 Vendor 完成声明。
+每个构建在 `data/staging/<build-id>` 内完成反编译清单、Ctags、继承解析和
+artifact 追踪。只有全部发布门禁通过后才替换 live DB。JADX 非零退出但仍产生
+源码时记录为 `degraded`；没有可用源码时构建失败，live DB 保持不变。
 
-因此在 Vendor 原子化里程碑完成前，只在数据库副本和单独输出目录中实验，不要对唯一生产库直接执行。参考 [仓库架构审查](doc/reviews/2026-07-21-repository-architecture-review.md)。
+主要证据：
+
+```text
+data/workspace/vendor-artifacts.json
+data/raw/vendor/vendor-import-report.json
+data/workspace/provenance.json
+data/workspace/build-manifest.json
+```
+
+`VENDOR_ARTIFACT`、`DERIVED_FROM_ARTIFACT`、Vendor definition 的
+`source_revision` 和继承边中的 `artifact_sha256` 可回溯每条 Vendor 定义。
+`scripts/import_vendor.sh [INPUT_DIR]` 仅为兼容包装器，会调用
+`scripts/rebuild_all.sh --vendor-input ...`，不能指定或修改 live DB。
 
 ## 9. 当前已验证状态和限制
 
@@ -281,7 +299,8 @@ WSL 中已有 JADX 1.5.6 和 A17 jar/apk 输入并不等于 Vendor 图已经可�
 `ENFORCES_PERMISSION`，未建立 XML permission declaration 边；全部 574,399
 个节点的 `source_revision` 仍为 `unknown`。这是 Permission Semantics Graph
 实施前的历史快照，不代表当前分支；当前 Permission 能力和验收见第 13 节。
-Vendor 原子导入和完整 provenance 仍是后续工作。
+Vendor 原子导入和可复现 source/tool provenance 已接入 staged publication；
+最终双构建指纹验收见可信多源导入计划的阶段 7。
 
 其他限制：
 

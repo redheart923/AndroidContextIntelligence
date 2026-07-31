@@ -41,6 +41,9 @@ bash scripts/rebuild_all.sh --plan-only
 bash scripts/rebuild_all.sh
 bash scripts/rebuild_all.sh --keep-failed-db
 bash scripts/rebuild_all.sh --strict
+bash scripts/rebuild_all.sh \
+  --vendor-input /home/ts/vendor-input \
+  --jadx-bin /home/ts/jadx-1.5.6/bin/jadx
 ```
 
 原子重建先写入 `data/staging/<build-id>`，通过外键、服务链和报告验证后
@@ -57,9 +60,12 @@ python -m compileall -q project
 bash -n project/scripts/rebuild_all.sh
 ```
 
-当前源码已将 Permission Semantics Graph 接入原子重建和发布前验证。
-Vendor 原子导入、跨仓库符号冲突治理和完整 source revision provenance
-仍属于后续工作，不能因实验性入口存在就视为已完成。
+当前源码已将 Permission Semantics Graph、跨仓库定义冲突门禁、可复现
+source/tool provenance 和 Vendor artifact staged 导入接入原子重建。
+
+Vendor APK/JAR 必须放在 `data/` 外。反编译缓存按 artifact SHA-256、JADX
+身份和选项寻址；Vendor 定义通过 `DERIVED_FROM_ARTIFACT` 回溯清单。JADX
+部分输出标为 `degraded`，无可用源码则构建失败，live DB 不变。
 
 ## Permission Semantics Graph v0.1
 

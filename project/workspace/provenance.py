@@ -86,6 +86,7 @@ def collect_provenance(
     source_config: Path,
     parser_registry: Path,
     local_config: Path | None = None,
+    vendor_manifest: Path | None = None,
 ) -> dict[str, object]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     aosp_root = Path(str(plan["aosp_root"]))
@@ -140,6 +141,7 @@ def collect_provenance(
             "ctags": _command_identity("ctags", ("--version",)),
             "jadx": _command_identity("jadx", ("--version",), optional=True),
         },
+        "vendor_artifacts": _file_identity(vendor_manifest),
     }
     payload["fingerprint"] = provenance_fingerprint(payload)
     return payload
@@ -206,6 +208,7 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--local-config", type=Path)
     collect.add_argument("--registry", type=Path, required=True)
     collect.add_argument("--output", type=Path, required=True)
+    collect.add_argument("--vendor-manifest", type=Path)
     validate = commands.add_parser("validate")
     validate.add_argument("--provenance", type=Path, required=True)
     validate.add_argument("--require-complete", action="store_true")
@@ -220,6 +223,7 @@ def main(arguments: list[str] | None = None) -> int:
             parsed.source_config,
             parsed.registry,
             parsed.local_config,
+            parsed.vendor_manifest,
         )
         parsed.output.parent.mkdir(parents=True, exist_ok=True)
         parsed.output.write_text(

@@ -5,6 +5,9 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.default.toml"
 LOCAL_CONFIG="$PROJECT_ROOT/config/source_roots.local.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
+VENDOR_INPUT="$PROJECT_ROOT/vendor-input"
+VENDOR_CACHE="$PROJECT_ROOT/.cache/vendor-artifacts"
+JADX_BIN="${JADX_BIN:-jadx}"
 MODE="rebuild"
 KEEP_FAILED=0
 STRICT=()
@@ -21,6 +24,9 @@ Options:
   --plan-only                 Refresh the execution plan only.
   --strict                    Fail on every unsupported detected capability.
   --strict-capability NAME    Fail when NAME lacks parser coverage.
+  --vendor-input DIR          Read Vendor APK/JAR inputs outside data/.
+  --vendor-cache DIR          Use a content-addressed decompilation cache.
+  --jadx-bin FILE             Use a specific JADX executable.
   --keep-failed-db            Retain the complete failed staging batch.
   -h, --help                  Show this help.
 EOF
@@ -65,6 +71,21 @@ while [[ $# -gt 0 ]]; do
         --keep-failed-db)
             KEEP_FAILED=1
             shift
+            ;;
+        --vendor-input)
+            [[ $# -ge 2 ]] || die "--vendor-input requires a path"
+            VENDOR_INPUT="$2"
+            shift 2
+            ;;
+        --vendor-cache)
+            [[ $# -ge 2 ]] || die "--vendor-cache requires a path"
+            VENDOR_CACHE="$2"
+            shift 2
+            ;;
+        --jadx-bin)
+            [[ $# -ge 2 ]] || die "--jadx-bin requires a path"
+            JADX_BIN="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -129,6 +150,7 @@ STAGED_DB="$STAGING/android_context.db"
 STAGED_WORKSPACE="$STAGING/workspace"
 STAGED_RAW="$STAGING/raw"
 PLAN="$STAGED_WORKSPACE/execution-plan.json"
+VENDOR_MANIFEST="$STAGED_WORKSPACE/vendor-artifacts.json"
 
 python -m workspace.cli \
     --config "$SOURCE_CONFIG" \
@@ -138,6 +160,13 @@ python -m workspace.cli \
     "${STRICT[@]}"
 
 sqlite3 "$STAGED_DB" < "$PROJECT_ROOT/storage/schema.sql"
+
+python -m workspace.vendor_artifacts prepare \
+    --input-dir "$VENDOR_INPUT" \
+    --cache-dir "$VENDOR_CACHE" \
+    --jadx "$JADX_BIN" \
+    --data-root "$PROJECT_ROOT/data" \
+    --report "$VENDOR_MANIFEST"
 
 python -m workspace.pipeline java \
     --plan "$PLAN" \
@@ -159,6 +188,13 @@ python -m workspace.pipeline inheritance \
     --db "$STAGED_DB" \
     --ctags-dir "$STAGED_RAW/ctags" \
     --report-dir "$STAGED_RAW/inheritance"
+
+python -m workspace.multi_vendor \
+    --manifest "$VENDOR_MANIFEST" \
+    --db "$STAGED_DB" \
+    --staging-root "$STAGING" \
+    --ctags-dir "$STAGED_RAW/vendor" \
+    --report "$STAGED_RAW/vendor/vendor-import-report.json"
 
 python -m workspace.multi_service \
     --plan "$PLAN" \
@@ -193,6 +229,7 @@ python -m workspace.provenance collect \
     --source-config "$SOURCE_CONFIG" \
     --local-config "$LOCAL_CONFIG" \
     --registry "$REGISTRY" \
+    --vendor-manifest "$VENDOR_MANIFEST" \
     --output "$STAGED_WORKSPACE/provenance.json"
 
 python -m workspace.provenance validate \
@@ -225,6 +262,7 @@ python -m workspace.build_publish prepare \
     --source-config "$SOURCE_CONFIG" \
     --local-config "$LOCAL_CONFIG" \
     --provenance "$STAGED_WORKSPACE/provenance.json" \
+    --vendor-manifest "$VENDOR_MANIFEST" \
     --started-at "$STARTED_AT" \
     --verified-at "$VERIFIED_AT"
 

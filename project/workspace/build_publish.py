@@ -22,6 +22,7 @@ RAW_REPORT_DIRECTORIES = (
     "inheritance",
     "service",
     "permission",
+    "vendor",
 )
 
 
@@ -108,10 +109,16 @@ def record_graph_build(
     verified_at: str,
     local_config: Path | None = None,
     provenance: Path | None = None,
+    vendor_manifest: Path | None = None,
 ) -> None:
     provenance_payload = (
         json.loads(provenance.read_text(encoding="utf-8"))
         if provenance is not None
+        else None
+    )
+    vendor_payload = (
+        json.loads(vendor_manifest.read_text(encoding="utf-8"))
+        if vendor_manifest is not None
         else None
     )
     writer = GraphWriter(batch.database)
@@ -143,6 +150,12 @@ def record_graph_build(
                         if provenance_payload is not None
                         else None
                     ),
+                    "vendor_artifacts": vendor_payload,
+                    "vendor_artifacts_sha256": (
+                        hashlib.sha256(vendor_manifest.read_bytes()).hexdigest()
+                        if vendor_manifest is not None
+                        else None
+                    ),
                     "started_at": started_at,
                     "verified_at": verified_at,
                 },
@@ -160,10 +173,16 @@ def write_build_manifest(
     verified_at: str,
     local_config: Path | None = None,
     provenance: Path | None = None,
+    vendor_manifest: Path | None = None,
 ) -> Path:
     provenance_payload = (
         json.loads(provenance.read_text(encoding="utf-8"))
         if provenance is not None
+        else None
+    )
+    vendor_payload = (
+        json.loads(vendor_manifest.read_text(encoding="utf-8"))
+        if vendor_manifest is not None
         else None
     )
     manifest = batch.workspace / "build-manifest.json"
@@ -189,6 +208,12 @@ def write_build_manifest(
                 "provenance_sha256": (
                     provenance_fingerprint(provenance_payload)
                     if provenance_payload is not None
+                    else None
+                ),
+                "vendor_artifacts": vendor_payload,
+                "vendor_artifacts_sha256": (
+                    hashlib.sha256(vendor_manifest.read_bytes()).hexdigest()
+                    if vendor_manifest is not None
                     else None
                 ),
                 "started_at": started_at,
@@ -486,6 +511,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--source-config", type=Path, required=True)
     prepare.add_argument("--local-config", type=Path)
     prepare.add_argument("--provenance", type=Path)
+    prepare.add_argument("--vendor-manifest", type=Path)
     prepare.add_argument("--started-at", required=True)
     prepare.add_argument("--verified-at", required=True)
 
@@ -515,6 +541,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.verified_at,
             arguments.local_config,
             arguments.provenance,
+            arguments.vendor_manifest,
         )
         write_build_manifest(
             batch,
@@ -523,6 +550,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.verified_at,
             arguments.local_config,
             arguments.provenance,
+            arguments.vendor_manifest,
         )
         prepare_staged_database(batch.database)
         return 0
