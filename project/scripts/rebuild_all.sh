@@ -8,6 +8,7 @@ REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
 MODE="rebuild"
 KEEP_FAILED=0
 STRICT=()
+PROVENANCE_STRICT=()
 
 usage() {
     cat <<'EOF'
@@ -52,11 +53,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         --strict)
             STRICT+=(--strict)
+            PROVENANCE_STRICT+=(--require-complete)
             shift
             ;;
         --strict-capability)
             [[ $# -ge 2 ]] || die "--strict-capability requires a name"
             STRICT+=(--strict-capability "$2")
+            PROVENANCE_STRICT+=(--require-complete)
             shift 2
             ;;
         --keep-failed-db)
@@ -185,6 +188,17 @@ python -m workspace.coverage_validation \
     --db "$STAGED_DB" \
     --report "$STAGED_WORKSPACE/capability-report.json"
 
+python -m workspace.provenance collect \
+    --plan "$PLAN" \
+    --source-config "$SOURCE_CONFIG" \
+    --local-config "$LOCAL_CONFIG" \
+    --registry "$REGISTRY" \
+    --output "$STAGED_WORKSPACE/provenance.json"
+
+python -m workspace.provenance validate \
+    --provenance "$STAGED_WORKSPACE/provenance.json" \
+    "${PROVENANCE_STRICT[@]}"
+
 FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
 if [[ -n "$FK_ERRORS" ]]; then
     printf '%s\n' "$FK_ERRORS" >&2
@@ -210,6 +224,7 @@ python -m workspace.build_publish prepare \
     --staging "$STAGING" \
     --source-config "$SOURCE_CONFIG" \
     --local-config "$LOCAL_CONFIG" \
+    --provenance "$STAGED_WORKSPACE/provenance.json" \
     --started-at "$STARTED_AT" \
     --verified-at "$VERIFIED_AT"
 

@@ -6,7 +6,7 @@ from .languages import detect_languages
 from .manifest import parse_repo_manifest
 from .models import LanguageInventory, PlanTask, RepositorySpec, WorkspacePlan
 from .registry import load_parser_registry
-from .revisions import resolve_repository_revision
+from .revisions import inspect_repository_provenance
 
 CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics"),
                 "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics"),
@@ -43,12 +43,27 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
         repo = repos[key]
         location = Path(repo.path) if Path(repo.path).is_absolute() else config.aosp_root / repo.path
         status = "available" if location.is_dir() else "missing"
-        revision = (
-            resolve_repository_revision(location)
-            if repo.enabled and status == "available"
+        provenance = (
+            inspect_repository_provenance(
+                location,
+                repo.include,
+                tuple(config.default_exclude) + tuple(repo.exclude),
+                repo.languages,
+            )
+            if repo.enabled
             else None
         )
-        repo = replace(repo, status=status, revision=revision)
+        repo = replace(
+            repo,
+            status=status,
+            revision=provenance.revision if provenance else None,
+            revision_state=provenance.state if provenance else "not_inspected",
+            revision_dirty=provenance.dirty if provenance else None,
+            inventory_sha256=(
+                provenance.inventory_sha256 if provenance else None
+            ),
+            inventory_file_count=provenance.file_count if provenance else 0,
+        )
         normalized.append(repo)
         if not repo.enabled or status != "available":
             if repo.enabled and status == "missing": gaps.append(PlanTask(repo.name, repo.path, "repository", "availability", None, "missing_repository", 0))

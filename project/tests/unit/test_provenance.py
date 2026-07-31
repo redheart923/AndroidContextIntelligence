@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from workspace.provenance import (
+    ProvenanceError,
+    collect_provenance,
+    main,
+    provenance_fingerprint,
+    validate_provenance,
+)
+
+
+def complete_provenance() -> dict[str, object]:
+    return {
+        "schema_version": "1.0",
+        "repositories": [
+            {
+                "name": "frameworks/base",
+                "path": "frameworks/base",
+                "state": "dirty",
+                "revision": "a" * 40,
+                "dirty": True,
+                "inventory_sha256": "b" * 64,
+                "file_count": 10,
+            }
+        ],
+        "configs": {
+            "source_roots.default.toml": {"sha256": "c" * 64},
+            "source_roots.local.toml": {"sha256": None},
+            "parser_registry.toml": {"sha256": "d" * 64},
+        },
+        "tools": {
+            "python": {"status": "available", "version": "3.12"},
+            "sqlite": {"status": "available", "version": "3.45"},
+            "ctags": {"status": "available", "version": "6.1"},
+            "jadx": {"status": "optional_missing", "version": None},
+        },
+    }
+
+
+def test_dirty_repository_is_valid_and_changes_fingerprint() -> None:
+    first = complete_provenance()
+    second = json.loads(json.dumps(first))
+    second["repositories"][0]["dirty"] = False
+    second["repositories"][0]["state"] = "clean"
+
+    validate_provenance(first, require_complete=True)
+    validate_provenance(second, require_complete=True)
+
+    assert provenance_fingerprint(first) != provenance_fingerprint(second)
+
+
+def test_requested_strict_gate_rejects_missing_inventory() -> None:
+    payload = complete_provenance()
+    payload["repositories"][0]["inventory_sha256"] = None
+
+    with pytest.raises(ProvenanceError, match="missing provenance"):
+        validate_provenance(payload, require_complete=True)
+
+
+def test_requested_strict_gate_rejects_tampered_fingerprint() -> None:
+    payload = complete_provenance()
+    payload["fingerprint"] = "0" * 64
+
+    with pytest.raises(ProvenanceError, match="fingerprint mismatch"):
+        validate_provenance(payload, require_complete=True)
+
+
+def test_collect_records_repository_config_and_tool_identities(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "aosp/frameworks/base"
+    repository.mkdir(parents=True)
+    (repository / "Source.java").write_text("class Source {}\n", encoding="utf-8")
+    source = tmp_path / "source_roots.default.toml"
+    source.write_text("[workspace]\n", encoding="utf-8")
+    registry = tmp_path / "parser_registry.toml"
+    registry.write_text("[parsers]\n", encoding="utf-8")
+    plan = tmp_path / "execution-plan.json"
+    inventory = __import__(
+        "workspace.revisions", fromlist=["inspect_repository_provenance"]
+    ).inspect_repository_provenance(repository)
+    plan.write_text(
+        json.dumps(
+            {
+                "aosp_root": str(tmp_path / "aosp"),
+                "default_exclude": [],
+                "repositories": [
+                    {
+                        "name": "frameworks/base",
+                        "path": "frameworks/base",
+                        "enabled": True,
+                        "include": [],
+                        "exclude": [],
+                        "languages": ["java"],
+                        "revision": inventory.revision,
+                        "inventory_sha256": inventory.inventory_sha256,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = collect_provenance(plan, source, registry)
+
+    assert payload["repositories"][0]["state"] == "non_git"
+    assert payload["repositories"][0]["matches_plan"] is True
+    assert payload["configs"]["source_roots.default.toml"]["sha256"]
+    assert payload["configs"]["parser_registry.toml"]["sha256"]
+    assert payload["tools"]["python"]["status"] == "available"
+    assert payload["tools"]["sqlite"]["status"] == "available"
+    assert payload["tools"]["ctags"]["status"] in {"available", "missing"}
+    assert payload["tools"]["jadx"]["status"] in {
+        "available",
+        "optional_missing",
+        "failed",
+    }
+    assert payload["fingerprint"]
+    assert provenance_fingerprint(payload) == payload["fingerprint"]
+
+    output = tmp_path / "provenance.json"
+    assert main(
+        [
+            "collect",
+            "--plan",
+            str(plan),
+            "--source-config",
+            str(source),
+            "--registry",
+            str(registry),
+            "--output",
+            str(output),
+        ]
+    ) == 0
+    assert output.is_file()
