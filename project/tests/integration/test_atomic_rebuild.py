@@ -33,7 +33,13 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert 'STAGED_RAW/permission/permission-semantics-report.json' in script
     assert "workspace.permission_validation" in script
     assert "workspace.symbol_collision_validation" in script
+    assert "workspace.provenance collect" in script
+    assert "workspace.provenance validate" in script
+    assert '--provenance "$STAGED_WORKSPACE/provenance.json"' in script
     assert script.index("workspace.symbol_collision_validation") < script.index(
+        "workspace.build_publish prepare"
+    )
+    assert script.index("workspace.provenance validate") < script.index(
         "workspace.build_publish prepare"
     )
     assert script.index("workspace.permission_validation") < script.index(
@@ -93,7 +99,16 @@ parser.add_argument("--strict", action="store_true")
 parser.add_argument("--strict-capability")
 args = parser.parse_args()
 args.out_dir.mkdir(parents=True, exist_ok=True)
-(args.out_dir / "execution-plan.json").write_text("{}\n", encoding="utf-8")
+(args.out_dir / "execution-plan.json").write_text(
+    json.dumps(
+        {
+            "aosp_root": ".",
+            "default_exclude": [],
+            "repositories": [],
+        }
+    ) + "\n",
+    encoding="utf-8",
+)
 (args.out_dir / "capability-report.json").write_text(
     json.dumps([{"status": "scheduled"}]) + "\n", encoding="utf-8"
 )

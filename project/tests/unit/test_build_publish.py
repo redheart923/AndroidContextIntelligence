@@ -114,6 +114,14 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
     source_config.write_text("[workspace]\n", encoding="utf-8")
     local_config = tmp_path / "source_roots.local.toml"
     local_config.write_text("[repositories]\n", encoding="utf-8")
+    provenance = tmp_path / "provenance.json"
+    provenance_payload = {
+        "schema_version": "1.0",
+        "repositories": [],
+        "configs": {},
+        "tools": {},
+    }
+    provenance.write_text(json.dumps(provenance_payload), encoding="utf-8")
     create_full_node_schema(batch.database)
 
     record_graph_build(
@@ -122,6 +130,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "2026-07-16T15:00:00Z",
         "2026-07-16T15:01:00Z",
         local_config,
+        provenance,
     )
     write_build_manifest(
         batch,
@@ -129,9 +138,26 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "2026-07-16T15:00:00Z",
         "2026-07-16T15:01:00Z",
         local_config,
+        provenance,
     )
 
     assert read_graph_build_id(batch.database) == batch.build_id
+    connection = sqlite3.connect(batch.database)
+    graph_properties = json.loads(
+        connection.execute(
+            "SELECT properties_json FROM node WHERE node_type = 'GRAPH_BUILD'"
+        ).fetchone()[0]
+    )
+    connection.close()
+    assert graph_properties["provenance"] == provenance_payload
+    assert graph_properties["provenance_sha256"] == hashlib.sha256(
+        json.dumps(
+            provenance_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     manifest = json.loads(
         (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
     )
@@ -144,6 +170,15 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "local_config": str(local_config.resolve()),
         "local_config_sha256": hashlib.sha256(
             local_config.read_bytes()
+        ).hexdigest(),
+        "provenance": provenance_payload,
+        "provenance_sha256": hashlib.sha256(
+            json.dumps(
+                provenance_payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
         ).hexdigest(),
         "started_at": "2026-07-16T15:00:00Z",
         "status": "verified",

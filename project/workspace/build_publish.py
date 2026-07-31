@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from graph.writer import GraphWriter, Node
+from workspace.provenance import provenance_fingerprint
 
 
 RAW_REPORT_DIRECTORIES = (
@@ -106,7 +107,13 @@ def record_graph_build(
     started_at: str,
     verified_at: str,
     local_config: Path | None = None,
+    provenance: Path | None = None,
 ) -> None:
+    provenance_payload = (
+        json.loads(provenance.read_text(encoding="utf-8"))
+        if provenance is not None
+        else None
+    )
     writer = GraphWriter(batch.database)
     try:
         writer.upsert_node(
@@ -130,6 +137,12 @@ def record_graph_build(
                         if local_config is not None and local_config.is_file()
                         else None
                     ),
+                    "provenance": provenance_payload,
+                    "provenance_sha256": (
+                        provenance_fingerprint(provenance_payload)
+                        if provenance_payload is not None
+                        else None
+                    ),
                     "started_at": started_at,
                     "verified_at": verified_at,
                 },
@@ -146,7 +159,13 @@ def write_build_manifest(
     started_at: str,
     verified_at: str,
     local_config: Path | None = None,
+    provenance: Path | None = None,
 ) -> Path:
+    provenance_payload = (
+        json.loads(provenance.read_text(encoding="utf-8"))
+        if provenance is not None
+        else None
+    )
     manifest = batch.workspace / "build-manifest.json"
     manifest.write_text(
         json.dumps(
@@ -164,6 +183,12 @@ def write_build_manifest(
                 "local_config_sha256": (
                     hashlib.sha256(local_config.read_bytes()).hexdigest()
                     if local_config is not None and local_config.is_file()
+                    else None
+                ),
+                "provenance": provenance_payload,
+                "provenance_sha256": (
+                    provenance_fingerprint(provenance_payload)
+                    if provenance_payload is not None
                     else None
                 ),
                 "started_at": started_at,
@@ -460,6 +485,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--staging", type=Path, required=True)
     prepare.add_argument("--source-config", type=Path, required=True)
     prepare.add_argument("--local-config", type=Path)
+    prepare.add_argument("--provenance", type=Path)
     prepare.add_argument("--started-at", required=True)
     prepare.add_argument("--verified-at", required=True)
 
@@ -488,6 +514,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.started_at,
             arguments.verified_at,
             arguments.local_config,
+            arguments.provenance,
         )
         write_build_manifest(
             batch,
@@ -495,6 +522,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.started_at,
             arguments.verified_at,
             arguments.local_config,
+            arguments.provenance,
         )
         prepare_staged_database(batch.database)
         return 0

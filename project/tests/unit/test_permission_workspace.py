@@ -5,7 +5,10 @@ import tomllib
 from pathlib import Path
 
 from workspace.planner import build_workspace_plan
-from workspace.revisions import resolve_repository_revision
+from workspace.revisions import (
+    inspect_repository_provenance,
+    resolve_repository_revision,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -87,6 +90,48 @@ def test_non_git_repository_revision_is_unknown_only_to_reporters(
     repository.mkdir()
 
     assert resolve_repository_revision(repository) is None
+
+
+def test_repository_provenance_distinguishes_clean_dirty_non_git_and_missing(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    revision = initialize_git_repository(repository)
+    (repository / "Source.java").write_text("class Source {}\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repository), "add", "Source.java"], check=True)
+    subprocess.run(
+        [
+            "git", "-C", str(repository),
+            "-c", "user.name=Permission Test",
+            "-c", "user.email=permission@example.invalid",
+            "commit", "-q", "-m", "source",
+        ],
+        check=True,
+    )
+    revision = resolve_repository_revision(repository)
+
+    clean = inspect_repository_provenance(repository)
+    (repository / "Source.java").write_text("class Source { int x; }\n", encoding="utf-8")
+    dirty = inspect_repository_provenance(repository)
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "Source.java").write_text("class Plain {}\n", encoding="utf-8")
+    non_git = inspect_repository_provenance(plain)
+    missing = inspect_repository_provenance(tmp_path / "missing")
+
+    assert clean.revision == revision
+    assert clean.state == "clean"
+    assert clean.dirty is False
+    assert dirty.revision == revision
+    assert dirty.state == "dirty"
+    assert dirty.dirty is True
+    assert dirty.inventory_sha256 != clean.inventory_sha256
+    assert non_git.state == "non_git"
+    assert non_git.revision is None
+    assert non_git.inventory_sha256
+    assert missing.state == "missing"
+    assert missing.inventory_sha256 is None
 
 
 def test_canonical_frameworks_base_scope_includes_permission_policy_xml() -> None:

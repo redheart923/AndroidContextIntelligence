@@ -36,6 +36,24 @@ class WorkspaceConfig:
 
 
 @dataclass(frozen=True)
+class RepositoryProvenance:
+    state: str
+    revision: str | None
+    dirty: bool | None
+    inventory_sha256: str | None
+    file_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "revision": self.revision,
+            "dirty": self.dirty,
+            "inventory_sha256": self.inventory_sha256,
+            "file_count": self.file_count,
+        }
+
+
+@dataclass(frozen=True)
 class RepositorySpec:
     name: str
     path: str
@@ -46,12 +64,20 @@ class RepositorySpec:
     source: str = "manifest"
     status: str = "available"
     revision: str | None = None
+    revision_state: str = "unknown"
+    revision_dirty: bool | None = None
+    inventory_sha256: str | None = None
+    inventory_file_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "path": self.path, "enabled": self.enabled,
                 "include": list(self.include), "exclude": list(self.exclude),
                 "languages": list(self.languages), "source": self.source,
-                "status": self.status, "revision": self.revision}
+                "status": self.status, "revision": self.revision,
+                "revision_state": self.revision_state,
+                "revision_dirty": self.revision_dirty,
+                "inventory_sha256": self.inventory_sha256,
+                "inventory_file_count": self.inventory_file_count}
 
 
 @dataclass(frozen=True)
