@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import re
 import sqlite3
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from graph.writer import Edge, GraphWriter, Node, stable_id
 
@@ -106,6 +108,23 @@ TEST_PATH_PARTS = {
     "benchmark",
     "benchmarks",
 }
+SERVICE_CANDIDATE_TOKENS = (
+    b"ServiceManager.addService",
+    b"publishBinderService",
+    b"LocalServices.addService",
+    b"static final String",
+    b"public static final String",
+)
+SOURCE_MODEL_CACHE_VERSION = "2"
+
+
+@dataclass
+class SourceScanMetrics:
+    scanned_files: int = 0
+    candidate_files: int = 0
+    excluded_candidates: int = 0
+    cache_hits: int = 0
+    cache_misses: int = 0
 
 
 @dataclass(frozen=True)
@@ -126,6 +145,14 @@ class RegistrationCall:
     offset: int
     line: int
     raw_call: str
+
+
+@dataclass(frozen=True)
+class ConstantDefinition:
+    name: str
+    qualified_name: str
+    expression: str
+    offset: int
 
 
 @dataclass(frozen=True)
@@ -401,6 +428,8 @@ class JavaSource:
             item.qualified_name
             for item in self.class_ranges
         }
+        self.constant_definitions = self._parse_constant_definitions()
+        self.registration_calls = _parse_registration_calls(self)
 
     @classmethod
     def load(
@@ -416,6 +445,58 @@ class JavaSource:
                 errors="replace",
             ),
         )
+
+    @classmethod
+    def from_cached_model(
+        cls,
+        path: Path,
+        source_root: Path,
+        payload: dict[str, object],
+    ) -> "JavaSource":
+        source = cls.__new__(cls)
+        source.path = path
+        source.source_root = source_root
+        source.text = ""
+        source.clean_text = str(payload["clean_text"])
+        source.package_name = str(payload["package_name"])
+        source.imports = {
+            str(key): str(value)
+            for key, value in dict(payload["imports"]).items()
+        }
+        source.wildcard_imports = [
+            str(value) for value in payload["wildcard_imports"]
+        ]
+        source.class_ranges = [
+            ClassRange(**item) for item in payload["class_ranges"]
+        ]
+        source.declared_qnames = {
+            item.qualified_name for item in source.class_ranges
+        }
+        source.constant_definitions = [
+            ConstantDefinition(**item)
+            for item in payload["constant_definitions"]
+        ]
+        source.registration_calls = [
+            RegistrationCall(**item)
+            for item in payload["registration_calls"]
+        ]
+        return source
+
+    def cached_model(self) -> dict[str, object]:
+        return {
+            "version": SOURCE_MODEL_CACHE_VERSION,
+            "clean_text": self.clean_text,
+            "package_name": self.package_name,
+            "imports": self.imports,
+            "wildcard_imports": self.wildcard_imports,
+            "class_ranges": [asdict(item) for item in self.class_ranges],
+            "constant_definitions": [
+                asdict(item) for item in self.constant_definitions
+            ],
+            "registration_calls": [
+                asdict(item) for item in self.registration_calls
+            ],
+        }
 
     @property
     def source_path(self) -> str:
@@ -510,6 +591,25 @@ class JavaSource:
             candidates,
             key=lambda item: item.body_start,
         )
+
+    def _parse_constant_definitions(self) -> list[ConstantDefinition]:
+        definitions: list[ConstantDefinition] = []
+        for match in STRING_CONSTANT_RE.finditer(self.clean_text):
+            containing = self.containing_class(match.start())
+            if not containing:
+                continue
+            name = match.group("name")
+            definitions.append(
+                ConstantDefinition(
+                    name=name,
+                    qualified_name=f"{containing.qualified_name}.{name}",
+                    expression=normalize_expression(
+                        match.group("expression")
+                    ),
+                    offset=match.start(),
+                )
+            )
+        return definitions
 
     def resolve_type_name(
         self,
@@ -661,7 +761,7 @@ class JavaSource:
         return None
 
 
-def find_registration_calls(
+def _parse_registration_calls(
     source: JavaSource,
 ) -> list[RegistrationCall]:
     calls: list[RegistrationCall] = []
@@ -719,6 +819,12 @@ def find_registration_calls(
     return calls
 
 
+def find_registration_calls(
+    source: JavaSource,
+) -> list[RegistrationCall]:
+    return list(source.registration_calls)
+
+
 class ConstantResolver:
     def __init__(
         self,
@@ -734,29 +840,14 @@ class ConstantResolver:
         ] = defaultdict(list)
 
         for source in sources:
-            for match in STRING_CONSTANT_RE.finditer(
-                source.clean_text
-            ):
-                containing = source.containing_class(
-                    match.start()
-                )
-                if not containing:
-                    continue
-
-                name = match.group("name")
-                expression = normalize_expression(
-                    match.group("expression")
-                )
-                qualified = (
-                    f"{containing.qualified_name}.{name}"
-                )
+            for definition in source.constant_definitions:
                 value = (
-                    expression,
+                    definition.expression,
                     source,
-                    match.start(),
+                    definition.offset,
                 )
-                self.by_qualified[qualified] = value
-                self.by_simple[name].append(value)
+                self.by_qualified[definition.qualified_name] = value
+                self.by_simple[definition.name].append(value)
 
     def resolve(
         self,
@@ -1172,40 +1263,94 @@ def import_fact(
     )
 
 
+def candidate_source_paths(root: Path) -> tuple[list[Path], int]:
+    candidates: list[Path] = []
+    scanned = 0
+    for path in root.rglob("*.java"):
+        scanned += 1
+        try:
+            content = path.read_bytes()
+        except OSError:
+            continue
+        if any(token in content for token in SERVICE_CANDIDATE_TOKENS):
+            candidates.append(path)
+    return sorted(candidates), scanned
+
+
+def _load_cached_source(
+    path: Path,
+    source_root: Path,
+    cache_dir: Path | None,
+    metrics: SourceScanMetrics,
+) -> JavaSource | None:
+    try:
+        content = path.read_bytes()
+    except OSError:
+        return None
+    digest = hashlib.sha256(content).hexdigest()
+    cache_path = (
+        cache_dir / SOURCE_MODEL_CACHE_VERSION / f"{digest}.json"
+        if cache_dir is not None
+        else None
+    )
+    if cache_path is not None and cache_path.is_file():
+        try:
+            payload = json.loads(cache_path.read_text(encoding="utf-8"))
+            if payload.get("version") == SOURCE_MODEL_CACHE_VERSION:
+                metrics.cache_hits += 1
+                return JavaSource.from_cached_model(
+                    path,
+                    source_root,
+                    payload,
+                )
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            pass
+    metrics.cache_misses += 1
+    text = content.decode("utf-8", errors="replace")
+    source = JavaSource(path, source_root, text)
+    if cache_path is not None:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = cache_path.with_name(f".{cache_path.name}.tmp-{os.getpid()}")
+        temporary.write_text(
+            json.dumps(
+                source.cached_model(),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        os.replace(temporary, cache_path)
+    return source
+
+
 def scan_sources(
     frameworks_base: Path,
     source_root: Path,
+    cache_dir: Path | None = None,
+    metrics: SourceScanMetrics | None = None,
+    path_filter: Callable[[Path], bool] | None = None,
 ) -> list[JavaSource]:
     sources: list[JavaSource] = []
-
-    for path in frameworks_base.rglob("*.java"):
-        try:
-            text = path.read_text(
-                encoding="utf-8",
-                errors="replace",
-            )
-        except OSError:
-            continue
-
-        if not any(
-            token in text
-            for token in (
-                "ServiceManager.addService",
-                "publishBinderService",
-                "LocalServices.addService",
-                "static final String",
-                "public static final String",
-            )
-        ):
-            continue
-
-        sources.append(
-            JavaSource(
-                path,
-                source_root,
-                text,
-            )
+    active_metrics = metrics if metrics is not None else SourceScanMetrics()
+    candidates, scanned = candidate_source_paths(frameworks_base)
+    if path_filter is not None:
+        allowed_candidates = [path for path in candidates if path_filter(path)]
+        active_metrics.excluded_candidates += (
+            len(candidates) - len(allowed_candidates)
         )
+        candidates = allowed_candidates
+    active_metrics.scanned_files += scanned
+    active_metrics.candidate_files += len(candidates)
+    for path in candidates:
+        source = _load_cached_source(
+            path,
+            source_root,
+            cache_dir,
+            active_metrics,
+        )
+        if source is not None:
+            sources.append(source)
 
     return sources
 

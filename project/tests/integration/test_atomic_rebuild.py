@@ -36,6 +36,8 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert "--vendor-input" in script
     assert "workspace.vendor_artifacts prepare" in script
     assert "workspace.multi_vendor" in script
+    assert 'SERVICE_CACHE="$PROJECT_ROOT/.cache/service-registration"' in script
+    assert '--cache-dir "$SERVICE_CACHE"' in script
     assert '--staging-root "$STAGING"' in script
     assert 'VENDOR_MANIFEST="$STAGED_WORKSPACE/vendor-artifacts.json"' in script
     assert '--vendor-manifest "$VENDOR_MANIFEST"' in script
@@ -177,6 +179,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--plan")
 parser.add_argument("--db")
 parser.add_argument("--report", type=Path, required=True)
+parser.add_argument("--cache-dir")
 args = parser.parse_args()
 args.report.parent.mkdir(parents=True, exist_ok=True)
 args.report.write_text("{}\n", encoding="utf-8")
