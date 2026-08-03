@@ -44,11 +44,20 @@ bash scripts/rebuild_all.sh --strict
 bash scripts/rebuild_all.sh \
   --vendor-input /home/ts/vendor-input \
   --jadx-bin /home/ts/jadx-1.5.6/bin/jadx
+
+python scripts/profile_service_registration.py \
+  --plan data/workspace/execution-plan.json \
+  --db data/android_context.db \
+  --cache-dir .cache/service-registration-profile \
+  --output data/workspace/service-registration-profile.json
 ```
 
 原子重建先写入 `data/staging/<build-id>`，通过外键、服务链和报告验证后
 再发布 `data/android_context.db`。中断恢复和并发排斥由
 `workspace.build_publish` 与 `data/.rebuild.lock` 管理。
+
+Service profiler 只操作隔离数据库副本：先移除副本中的旧 Service 图，再执行
+冷/热缓存导入并比较图指纹、AMS/PMS/LocalServices 计数、解析诊断和阶段耗时。
 
 ## 开发验证
 

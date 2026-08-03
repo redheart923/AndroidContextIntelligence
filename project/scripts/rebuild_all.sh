@@ -7,6 +7,7 @@ LOCAL_CONFIG="$PROJECT_ROOT/config/source_roots.local.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
 VENDOR_INPUT="$PROJECT_ROOT/vendor-input"
 VENDOR_CACHE="$PROJECT_ROOT/.cache/vendor-artifacts"
+SERVICE_CACHE="$PROJECT_ROOT/.cache/service-registration"
 JADX_BIN="${JADX_BIN:-jadx}"
 MODE="rebuild"
 KEEP_FAILED=0
@@ -199,6 +200,7 @@ python -m workspace.multi_vendor \
 python -m workspace.multi_service \
     --plan "$PLAN" \
     --db "$STAGED_DB" \
+    --cache-dir "$SERVICE_CACHE" \
     --report "$STAGED_RAW/service/service-registration-report.json"
 
 python -m workspace.multi_permission \

@@ -194,6 +194,7 @@ bash ./setup.sh --fresh
 | `scripts/install_project.py` | staging、hash manifest、fresh/upgrade、rollback | 安装实现和测试，不手工修改部署 |
 | `scripts/verify_project_install.py` | 校验已安装 managed payload | 检查 WSL 是否被直接修改 |
 | `project/scripts/rebuild_all.sh` | 多仓库计划、各解析器、验证和原子发布 | 安装后日常重建 |
+| `project/scripts/profile_service_registration.py` | 在隔离数据库副本上执行 Service 冷/热 profile，比较语义指纹与验收链 | 调整 Service 扫描、解析或缓存前后 |
 | `installers/install_*_v01.sh` | 兼容旧命令，默认转发 `--upgrade` | 仅用于迁移旧自动化，后续删除 |
 | `project/scripts/import_vendor.sh` | Vendor 兼容入口，转发到 canonical staged rebuild | 旧自动化迁移；不直接写 live DB |
 
@@ -222,7 +223,18 @@ bash scripts/rebuild_all.sh --strict-capability permission_semantics
 bash scripts/rebuild_all.sh \
   --vendor-input /home/ts/vendor-input \
   --jadx-bin /home/ts/jadx-1.5.6/bin/jadx
+
+# 在隔离副本上验证 Service 缓存收益；不会修改 live DB
+python scripts/profile_service_registration.py \
+  --plan data/workspace/execution-plan.json \
+  --db data/android_context.db \
+  --cache-dir .cache/service-registration-profile \
+  --output data/workspace/service-registration-profile.json
 ```
+
+Service profiler 会先从数据库副本移除旧 Service 图，再分别执行冷缓存和热缓存
+导入。只有两次图指纹一致，结果才有效；报告同时保留 AMS、PMS、LocalServices
+计数、解析状态汇总、候选/排除文件数以及各阶段耗时。
 
 数据库与报告：
 
