@@ -50,6 +50,9 @@ python scripts/profile_service_registration.py \
   --db data/android_context.db \
   --cache-dir .cache/service-registration-profile \
   --output data/workspace/service-registration-profile.json
+
+python scripts/graph_fingerprint.py \
+  --db data/android_context.db
 ```
 
 原子重建先写入 `data/staging/<build-id>`，通过外键、服务链和报告验证后
@@ -58,6 +61,9 @@ python scripts/profile_service_registration.py \
 
 Service profiler 只操作隔离数据库副本：先移除副本中的旧 Service 图，再执行
 冷/热缓存导入并比较图指纹、AMS/PMS/LocalServices 计数、解析诊断和阶段耗时。
+
+`graph_fingerprint.py` 对除 `GRAPH_BUILD` 和 `updated_at` 外的稳定图语义计算
+SHA-256，用于比较两次独立全量构建；它不替代各图层的专用验证器。
 
 ## 开发验证
 

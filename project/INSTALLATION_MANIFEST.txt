@@ -46,6 +46,11 @@ inputs, and decompiler output are not part of this canonical payload.
 Canonical rebuild entry point:
   scripts/rebuild_all.sh
 
+Deterministic acceptance fingerprint:
+  scripts/graph_fingerprint.py --db data/android_context.db
+  Excludes GRAPH_BUILD identity and updated_at, but includes all other stable
+  node, edge, source, extractor, content hash, and status fields.
+
 Current source modules include Java, Kotlin tag, AIDL/Binder, Java inheritance,
 service registration, Permission, atomic publication, and Vendor collection
 and staged artifact ingestion. Vendor inputs remain outside data/, decompiled

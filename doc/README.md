@@ -32,6 +32,7 @@
 - [Atomic Database Rebuild v0.1](plans/2026-07-16-atomic-database-rebuild-v01-plan.md)：原子数据库重建 TDD 实施计划。
 - [Permission Enforcement Graph v0.1（已被设计取代）](plans/2026-07-17-permission-enforcement-graph-v01-plan.md)：旧版逐行扫描方案，仅保留为历史记录，不应继续执行。
 - [Permission Semantics Graph v0.1](plans/2026-07-22-permission-semantics-graph-v01-plan.md)：已确认设计对应的分阶段 TDD 实施、原子发布验证和真实 AOSP 验收计划。
+- [Trustworthy Multi-Source Ingestion v0.1](plans/2026-07-28-trustworthy-multi-source-ingestion-v01-plan.md)：能力质量、配置迁移、符号冲突、provenance、Vendor 原子导入与性能治理计划。
 - [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
 ## Reviews
@@ -43,7 +44,7 @@
 - [Trustworthy Baseline Acceptance](reviews/2026-07-21-trustworthy-baseline-acceptance.md)：WSL 临时 fresh/verify/upgrade 验收、漂移修复、保留路径和 live 数据库未改动证据。
 - [Permission Semantics Graph v0.1 Acceptance](reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md)：Permission 语义图的测试、真实 AOSP 重建、查询和确定性证据。
 - [Post-Permission Repository Architecture Review](reviews/2026-07-28-post-permission-repository-architecture-review.md)：Permission 完成后的全仓库风险复核与下一阶段边界。
-- [Trustworthy Multi-Source Ingestion v0.1](plans/2026-07-28-trustworthy-multi-source-ingestion-v01-plan.md)：能力质量、配置迁移、符号冲突、provenance、Vendor 原子导入与性能治理计划。
+- [Trustworthy Multi-Source Ingestion v0.1 Acceptance](reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md)：安装生命周期、真实 AOSP 双构建、Vendor/发布恢复、性能和仓库门禁证据。
 
 ## 文档分类规范
 

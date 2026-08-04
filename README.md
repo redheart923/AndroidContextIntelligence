@@ -195,6 +195,7 @@ bash ./setup.sh --fresh
 | `scripts/verify_project_install.py` | 校验已安装 managed payload | 检查 WSL 是否被直接修改 |
 | `project/scripts/rebuild_all.sh` | 多仓库计划、各解析器、验证和原子发布 | 安装后日常重建 |
 | `project/scripts/profile_service_registration.py` | 在隔离数据库副本上执行 Service 冷/热 profile，比较语义指纹与验收链 | 调整 Service 扫描、解析或缓存前后 |
+| `project/scripts/graph_fingerprint.py` | 对稳定节点与边做确定性 SHA-256，排除 build identity 和更新时间 | 比较两次独立全量构建是否产生相同图语义 |
 | `installers/install_*_v01.sh` | 兼容旧命令，默认转发 `--upgrade` | 仅用于迁移旧自动化，后续删除 |
 | `project/scripts/import_vendor.sh` | Vendor 兼容入口，转发到 canonical staged rebuild | 旧自动化迁移；不直接写 live DB |
 
@@ -230,11 +231,18 @@ python scripts/profile_service_registration.py \
   --db data/android_context.db \
   --cache-dir .cache/service-registration-profile \
   --output data/workspace/service-registration-profile.json
+
+# 比较两次独立构建时，对各自发布的 live DB 计算完整语义指纹
+python scripts/graph_fingerprint.py --db data/android_context.db
 ```
 
 Service profiler 会先从数据库副本移除旧 Service 图，再分别执行冷缓存和热缓存
 导入。只有两次图指纹一致，结果才有效；报告同时保留 AMS、PMS、LocalServices
 计数、解析状态汇总、候选/排除文件数以及各阶段耗时。
+
+全图指纹覆盖除 `GRAPH_BUILD` 外的稳定节点、边及其 provenance 字段，并忽略
+`updated_at`。它用于比较两个独立构建结果，不能替代外键、能力覆盖和代表性 AOSP
+证据门禁。
 
 数据库与报告：
 
@@ -303,8 +311,8 @@ data/workspace/build-manifest.json
 本分支的发布基线验证：
 
 ```text
-根安装/发布契约：44 passed
-规范项目测试：54 passed
+根安装/发布契约：54 passed
+规范项目测试：145 passed
 ```
 
 2026-07-21 审查时的 live 数据库仅显示 27 条 `REQUIRES_PERMISSION`、8 条
@@ -312,7 +320,8 @@ data/workspace/build-manifest.json
 个节点的 `source_revision` 仍为 `unknown`。这是 Permission Semantics Graph
 实施前的历史快照，不代表当前分支；当前 Permission 能力和验收见第 13 节。
 Vendor 原子导入和可复现 source/tool provenance 已接入 staged publication；
-最终双构建指纹验收见可信多源导入计划的阶段 7。
+最终双构建指纹验收已通过，见
+[可信多源导入验收](doc/reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md)。
 
 其他限制：
 
@@ -338,12 +347,9 @@ git diff --check
 
 ## 11. 下一步顺序
 
-1. 完成临时 WSL fresh/upgrade/verify 的非破坏性验收。
-2. 建立解析器能力质量和运行时证据门禁，避免“已调度”等同于“已覆盖”。
-3. 分离 canonical source defaults 与本地覆盖，补齐 upgrade 配置迁移。
-4. 治理跨仓库同名符号并记录 repo dirty state、工具版本和输入摘要。
-5. 将 Vendor 输入接入 staging、锁、验证和原子发布。
-6. 再建设 Build Graph、增量更新、Runtime/Test Graph 和 Agent 上下文接口。
+可信多源导入 v0.1 已完成。后续新增 Build Graph、增量更新、Runtime/Test
+Graph 或 Agent 上下文接口前，应先为目标域确认设计和验收门禁，并复用本阶段的
+能力质量、repository-scoped identity、provenance、staging 和双构建确定性契约。
 
 ## 12. 文档
 
@@ -351,6 +357,7 @@ git diff --check
 - [仓库架构审查](doc/reviews/2026-07-21-repository-architecture-review.md)
 - [Permission 后仓库架构复核](doc/reviews/2026-07-28-post-permission-repository-architecture-review.md)
 - [可信多源导入实施计划](doc/plans/2026-07-28-trustworthy-multi-source-ingestion-v01-plan.md)
+- [可信多源导入验收](doc/reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md)
 - [可信源码与安装设计](doc/designs/2026-07-21-trustworthy-source-and-installation-baseline-design.md)
 - [可信源码与安装实施计划](doc/plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)
 - [总体架构](doc/architecture/android-specific-context-graph.md)
