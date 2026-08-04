@@ -1,7 +1,7 @@
 # Trustworthy Multi-Source Ingestion v0.1 Implementation Plan
 
-> Status: Proposed. Start only after Permission Semantics Graph v0.1 is
-> accepted and merged.
+> Status: Completed and accepted on 2026-08-04. See
+> [the acceptance record](../reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md).
 
 **Goal:** Make graph coverage declarations, upgrades, cross-repository identity,
 source provenance, and Vendor ingestion deterministic and transaction-safe.

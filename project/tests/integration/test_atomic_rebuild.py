@@ -313,6 +313,29 @@ def _checksum(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _write_fake_jadx(path: Path) -> None:
+    _write(
+        path,
+        """#!/usr/bin/env python3
+import pathlib
+import sys
+
+if "--version" in sys.argv:
+    print("jadx fixture 1.0")
+    raise SystemExit(0)
+
+output = pathlib.Path(sys.argv[sys.argv.index("-d") + 1])
+source = output / "sources/vendor/fixture/VendorService.java"
+source.parent.mkdir(parents=True, exist_ok=True)
+source.write_text(
+    "package vendor.fixture; class VendorService {}\\n",
+    encoding="utf-8",
+)
+""",
+    )
+    path.chmod(0o755)
+
+
 def test_forced_importer_failure_preserves_live_batch(project: Path) -> None:
     database = project / "data/android_context.db"
     before = _checksum(database)
@@ -426,3 +449,36 @@ def test_successful_publication_exposes_matching_build_ids(project: Path) -> Non
     assert manifest["build_id"] == database_build_id
     assert (project / "data/workspace/marker.txt").read_text() == "new"
     assert (project / "data/raw/ctags/marker.txt").read_text() == "new"
+
+
+def test_successful_vendor_fixture_build_publishes_artifact_provenance(
+    project: Path,
+) -> None:
+    artifact = project / "vendor-input/services.jar"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_bytes(b"vendor fixture artifact")
+    jadx = project / "tools/fake-jadx"
+    _write_fake_jadx(jadx)
+
+    result = _run(project, "--jadx-bin", str(jadx))
+
+    assert result.returncode == 0, result.stderr
+    build_manifest = json.loads(
+        (project / "data/workspace/build-manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    vendor = build_manifest["vendor_artifacts"]
+    assert vendor["summary"] == {
+        "degraded": 0,
+        "failed": 0,
+        "prepared": 1,
+        "reused": 0,
+    }
+    assert len(vendor["artifacts"]) == 1
+    record = vendor["artifacts"][0]
+    assert record["artifact_name"] == "services.jar"
+    assert record["artifact_sha256"] == _checksum(artifact)
+    assert record["status"] == "prepared"
+    assert record["source_file_count"] == 1
+    assert build_manifest["provenance"]["vendor_artifacts"]["sha256"]
