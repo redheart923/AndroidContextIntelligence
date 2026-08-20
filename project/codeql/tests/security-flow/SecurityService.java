@@ -53,4 +53,10 @@ public class SecurityService extends Binder {
     private void forward(String forwarded) {
         SensitiveStore.writeSecureSetting(forwarded);
     }
+
+    public void straightLineRestore(String value) {
+        long token = Binder.clearCallingIdentity();
+        SensitiveStore.writeSecureSetting(value);
+        Binder.restoreCallingIdentity(token);
+    }
 }

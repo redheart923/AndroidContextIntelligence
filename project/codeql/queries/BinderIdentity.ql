@@ -18,10 +18,17 @@ predicate restoresSameToken(Call clear, Call restore) {
   )
 }
 
+predicate restoreIsInFinally(Call restore) {
+  exists(TryStmt guarded |
+    guarded.getFinally() = restore.getEnclosingStmt().getEnclosingStmt*()
+  )
+}
+
 predicate pairedAllExits(Call clear, Call restore) {
   isIdentityClear(clear) and isIdentityRestore(restore) and
   clear.getCaller() = restore.getCaller() and
   restoresSameToken(clear, restore) and
+  restoreIsInFinally(restore) and
   dominates(clear.getControlFlowNode(), restore.getControlFlowNode()) and
   postDominates(restore.getControlFlowNode(), clear.getControlFlowNode())
 }

@@ -88,6 +88,7 @@ def test_security_fixture_locks_positive_and_negative_semantics() -> None:
     assert all("#unguarded(" not in row for row in guard_rows)
     assert any("paired_all_exits" in row for row in identity_rows)
     assert any("missing_all_exit_restore" in row for row in identity_rows)
+    assert any("#straightLineRestore(" in row and "missing_all_exit_restore" in row for row in identity_rows)
     assert any("SecurityService#unguarded(" in row for row in flow_rows)
     assert any("SecurityServiceKt#unguarded(" in row for row in flow_rows)
     assert any(row == "edges" for row in flow_rows)

@@ -7,6 +7,7 @@ edges
 | SecurityService.java:49:31:49:42 | value : String | SecurityService.java:50:17:50:21 | value : String | provenance |  |
 | SecurityService.java:50:17:50:21 | value : String | SecurityService.java:53:26:53:41 | forwarded : String | provenance |  |
 | SecurityService.java:53:26:53:41 | forwarded : String | SecurityService.java:54:43:54:51 | forwarded | provenance |  |
+| SecurityService.java:57:37:57:48 | value : String | SecurityService.java:59:43:59:47 | value | provenance |  |
 | SecurityServiceKt.kt:6:19:6:31 | value : String | SecurityServiceKt.kt:7:43:7:47 | value | provenance |  |
 nodes
 | SecurityService.java:13:25:13:36 | value : String | semmle.label | value : String |
@@ -23,6 +24,8 @@ nodes
 | SecurityService.java:50:17:50:21 | value : String | semmle.label | value : String |
 | SecurityService.java:53:26:53:41 | forwarded : String | semmle.label | forwarded : String |
 | SecurityService.java:54:43:54:51 | forwarded | semmle.label | forwarded |
+| SecurityService.java:57:37:57:48 | value : String | semmle.label | value : String |
+| SecurityService.java:59:43:59:47 | value | semmle.label | value |
 | SecurityServiceKt.kt:6:19:6:31 | value : String | semmle.label | value : String |
 | SecurityServiceKt.kt:7:43:7:47 | value | semmle.label | value |
 subpaths
@@ -33,4 +36,5 @@ subpaths
 | SecurityService.java:33:43:33:47 | value | SecurityService.java:31:32:31:43 | value : String | SecurityService.java:33:43:33:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
 | SecurityService.java:43:47:43:51 | value | SecurityService.java:39:32:39:43 | value : String | SecurityService.java:43:47:43:51 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
 | SecurityService.java:54:43:54:51 | forwarded | SecurityService.java:49:31:49:42 | value : String | SecurityService.java:54:43:54:51 | forwarded | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#throughHelper(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#forward(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:59:43:59:47 | value | SecurityService.java:57:37:57:48 | value : String | SecurityService.java:59:43:59:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#straightLineRestore(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#straightLineRestore(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
 | SecurityServiceKt.kt:7:43:7:47 | value | SecurityServiceKt.kt:6:19:6:31 | value : String | SecurityServiceKt.kt:7:43:7:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityServiceKt.kt;sink_owner=kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityServiceKt.kt |
