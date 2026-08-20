@@ -440,6 +440,11 @@ bash scripts/rebuild_all.sh \
 时，缺少或不匹配的 CodeQL DB 会在 publication 前失败。调用关系区分 `MUST_CALL`、
 `MAY_CALL` 与未解析调用；`OBSERVED_CALL` 保留给未来运行时证据。
 
+跨方法数据流来自 CodeQL PathGraph 的 SARIF `codeFlows/threadFlowLocations`，每个
+`dataflow_step` 都对应真实路径节点和源码位置，不以两个端点冒充完整路径。查询源码
+哈希参与缓存身份；严格验收还会检查 `config/codeql.toml` 中 AMS、PMS、Kotlin
+SystemUI 的精确调用事实和已提交负例。
+
 纠错文件存放在 `config/corrections/*.toml`，支持 `suppress`、`replace`、
 `annotate`、`add`。原始事实不删除；有效视图叠加 `FACT_CORRECTION`，hash/revision
 不匹配会标记 stale。比较两次图谱：

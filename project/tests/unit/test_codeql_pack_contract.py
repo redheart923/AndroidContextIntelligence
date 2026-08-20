@@ -13,15 +13,15 @@ def test_query_pack_declares_all_versioned_exports() -> None:
     assert "name: android-context/java-kotlin-call-dataflow" in pack
     assert "version: 0.1.0" in pack
     assert "codeql/java-all" in pack
-    for name in (
-        "CallSites.ql",
-        "SystemServiceDataflow.ql",
-        "SystemServiceGuards.ql",
-        "BinderIdentity.ql",
-    ):
+    for name in ("CallSites.ql", "SystemServiceGuards.ql", "BinderIdentity.ql"):
         text = (CODEQL_ROOT / "queries" / name).read_text(encoding="utf-8")
         assert "@kind table" in text
         assert "schema_version" in text
+    dataflow = (CODEQL_ROOT / "queries/SystemServiceDataflow.ql").read_text(
+        encoding="utf-8"
+    )
+    assert "@kind path-problem" in dataflow
+    assert "import SystemServicePath::PathGraph" in dataflow
 
 
 def test_query_pack_has_locked_dependencies_and_fixture_expectations() -> None:
@@ -90,3 +90,6 @@ def test_security_fixture_locks_positive_and_negative_semantics() -> None:
     assert any("missing_all_exit_restore" in row for row in identity_rows)
     assert any("SecurityService#unguarded(" in row for row in flow_rows)
     assert any("SecurityServiceKt#unguarded(" in row for row in flow_rows)
+    assert any(row == "edges" for row in flow_rows)
+    assert any(row == "nodes" for row in flow_rows)
+    assert any("#throughHelper(" in row for row in flow_rows)

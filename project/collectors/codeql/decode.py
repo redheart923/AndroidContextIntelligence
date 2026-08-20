@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from collections import OrderedDict
 from typing import Iterable
+from urllib.parse import unquote, urlparse
 
 from .model import (
     CallSiteRecord,
@@ -212,6 +214,132 @@ def _decode_dataflow(
                 query_version=query_version, database_fingerprint=database_fingerprint,
             )
         )
+    return tuple(result)
+
+
+def _path_metadata(message: str) -> dict[str, str]:
+    parts = message.split(";")
+    if not parts or parts[0] != "ACI1":
+        raise DecodeError("invalid CodeQL path metadata version")
+    result: dict[str, str] = {}
+    for part in parts[1:]:
+        if "=" not in part:
+            raise DecodeError(f"invalid CodeQL path metadata item: {part!r}")
+        key, value = part.split("=", 1)
+        if not key or key in result:
+            raise DecodeError(f"invalid duplicate CodeQL path metadata key: {key!r}")
+        result[key] = value
+    required = {
+        "scenario", "entry", "source_parameter_index", "source_repository",
+        "source_path", "sink_owner", "sink_callable", "sink_repository",
+        "sink_path",
+    }
+    missing = required - set(result)
+    if missing:
+        raise DecodeError(f"missing CodeQL path metadata: {sorted(missing)!r}")
+    return result
+
+
+def _source_path_from_uri(uri: str, repository_paths: tuple[str, ...]) -> str:
+    parsed = urlparse(uri)
+    raw_path = unquote(parsed.path if parsed.scheme == "file" else uri)
+    normalized = raw_path.replace("\\", "/")
+    for repository in sorted(repository_paths, key=len, reverse=True):
+        marker = "/" + repository.strip("/") + "/"
+        index = normalized.find(marker)
+        if index >= 0:
+            return normalized[index + 1 :]
+        if normalized.lstrip("/").startswith(repository.strip("/") + "/"):
+            return normalized.lstrip("/")
+    raise DecodeError(f"path location is outside configured repositories: {uri!r}")
+
+
+def _repository_for_path(source_path: str, repository_paths: tuple[str, ...]) -> str:
+    matches = [
+        repository
+        for repository in repository_paths
+        if source_path == repository or source_path.startswith(repository.rstrip("/") + "/")
+    ]
+    if not matches:
+        raise DecodeError(f"no repository owns CodeQL path location: {source_path!r}")
+    return max(matches, key=len)
+
+
+def decode_sarif_paths(
+    sarif_text: str,
+    *,
+    query_version: str,
+    database_fingerprint: str,
+    repository_paths: tuple[str, ...],
+) -> tuple[DataflowPathRecord, ...]:
+    try:
+        payload = json.loads(sarif_text)
+        runs = payload["runs"]
+    except (json.JSONDecodeError, KeyError, TypeError) as error:
+        raise DecodeError(f"invalid CodeQL path SARIF: {error}") from error
+    if not isinstance(runs, list) or len(runs) != 1:
+        raise DecodeError("CodeQL path SARIF must contain exactly one run")
+    result: list[DataflowPathRecord] = []
+    try:
+        results = runs[0].get("results", [])
+        for finding in results:
+            metadata = _path_metadata(str(finding["message"]["text"]))
+            for code_flow in finding.get("codeFlows", []):
+                for thread_flow in code_flow.get("threadFlows", []):
+                    locations = thread_flow.get("locations", [])
+                    if len(locations) < 2:
+                        raise DecodeError("CodeQL path explanation has fewer than two nodes")
+                    steps: list[ProgramValueRecord] = []
+                    for ordinal, item in enumerate(locations):
+                        location = item["location"]
+                        physical = location["physicalLocation"]
+                        uri = str(physical["artifactLocation"]["uri"])
+                        region = physical["region"]
+                        source_path = _source_path_from_uri(uri, repository_paths)
+                        repository = _repository_for_path(source_path, repository_paths)
+                        line = int(region["startLine"])
+                        start_column = int(region.get("startColumn", 1))
+                        end_line = int(region.get("endLine", line))
+                        end_column = int(region.get("endColumn", start_column))
+                        symbol_key = ""
+                        value_kind = "expression"
+                        parameter_index: int | None = None
+                        if ordinal == 0:
+                            symbol_key = metadata["entry"]
+                            value_kind = "parameter"
+                            parameter_index = int(metadata["source_parameter_index"])
+                        elif ordinal == len(locations) - 1:
+                            symbol_key = metadata["sink_owner"]
+                        steps.append(
+                            ProgramValueRecord(
+                                identity=str(location.get("message", {}).get("text", "")),
+                                symbol_key=symbol_key,
+                                value_kind=value_kind,
+                                ordinal=ordinal,
+                                span=SourceSpan(
+                                    repository, source_path, line, start_column,
+                                    end_line, end_column,
+                                ),
+                                parameter_index=parameter_index,
+                            )
+                        )
+                    result.append(
+                        DataflowPathRecord(
+                            scenario=metadata["scenario"],
+                            entry_symbol_key=metadata["entry"],
+                            sink_symbol_key=(
+                                metadata["sink_owner"] + "#" + metadata["sink_callable"]
+                            ),
+                            steps=tuple(steps),
+                            query_id="SystemServiceDataflow",
+                            query_version=query_version,
+                            database_fingerprint=database_fingerprint,
+                        )
+                    )
+    except (KeyError, TypeError, ValueError, RecordError) as error:
+        if isinstance(error, DecodeError):
+            raise
+        raise DecodeError(f"invalid CodeQL path SARIF result: {error}") from error
     return tuple(result)
 
 

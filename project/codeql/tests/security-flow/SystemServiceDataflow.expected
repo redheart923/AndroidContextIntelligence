@@ -1,6 +1,36 @@
-| 1 | binder_argument_to_sensitive_sink | java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean) | 0 | value |  | SecurityService.java | 31 | 32 | 43 | java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityService.java | 33 | 9 | 48 | value | value |
-| 1 | binder_argument_to_sensitive_sink | java\|method\|fixture.security.SecurityService#guarded(java.lang.String) | 0 | value |  | SecurityService.java | 13 | 25 | 36 | java\|method\|fixture.security.SecurityService#guarded(java.lang.String) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityService.java | 15 | 9 | 48 | value | value |
-| 1 | binder_argument_to_sensitive_sink | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | 0 | value |  | SecurityService.java | 39 | 32 | 43 | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityService.java | 43 | 13 | 52 | value | value |
-| 1 | binder_argument_to_sensitive_sink | java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String) | 0 | value |  | SecurityService.java | 22 | 32 | 43 | java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityService.java | 25 | 13 | 52 | value | value |
-| 1 | binder_argument_to_sensitive_sink | java\|method\|fixture.security.SecurityService#unguarded(java.lang.String) | 0 | value |  | SecurityService.java | 18 | 27 | 38 | java\|method\|fixture.security.SecurityService#unguarded(java.lang.String) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityService.java | 19 | 9 | 48 | value | value |
-| 1 | binder_argument_to_sensitive_sink | kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String) | 0 | value |  | SecurityServiceKt.kt | 6 | 19 | 31 | kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String) | fixture.security.SensitiveStore.writeSecureSetting |  | SecurityServiceKt.kt | 7 | 24 | 48 | value | value |
+edges
+| SecurityService.java:13:25:13:36 | value : String | SecurityService.java:15:43:15:47 | value | provenance |  |
+| SecurityService.java:18:27:18:38 | value : String | SecurityService.java:19:43:19:47 | value | provenance |  |
+| SecurityService.java:22:32:22:43 | value : String | SecurityService.java:25:47:25:51 | value | provenance |  |
+| SecurityService.java:31:32:31:43 | value : String | SecurityService.java:33:43:33:47 | value | provenance |  |
+| SecurityService.java:39:32:39:43 | value : String | SecurityService.java:43:47:43:51 | value | provenance |  |
+| SecurityService.java:49:31:49:42 | value : String | SecurityService.java:50:17:50:21 | value : String | provenance |  |
+| SecurityService.java:50:17:50:21 | value : String | SecurityService.java:53:26:53:41 | forwarded : String | provenance |  |
+| SecurityService.java:53:26:53:41 | forwarded : String | SecurityService.java:54:43:54:51 | forwarded | provenance |  |
+| SecurityServiceKt.kt:6:19:6:31 | value : String | SecurityServiceKt.kt:7:43:7:47 | value | provenance |  |
+nodes
+| SecurityService.java:13:25:13:36 | value : String | semmle.label | value : String |
+| SecurityService.java:15:43:15:47 | value | semmle.label | value |
+| SecurityService.java:18:27:18:38 | value : String | semmle.label | value : String |
+| SecurityService.java:19:43:19:47 | value | semmle.label | value |
+| SecurityService.java:22:32:22:43 | value : String | semmle.label | value : String |
+| SecurityService.java:25:47:25:51 | value | semmle.label | value |
+| SecurityService.java:31:32:31:43 | value : String | semmle.label | value : String |
+| SecurityService.java:33:43:33:47 | value | semmle.label | value |
+| SecurityService.java:39:32:39:43 | value : String | semmle.label | value : String |
+| SecurityService.java:43:47:43:51 | value | semmle.label | value |
+| SecurityService.java:49:31:49:42 | value : String | semmle.label | value : String |
+| SecurityService.java:50:17:50:21 | value : String | semmle.label | value : String |
+| SecurityService.java:53:26:53:41 | forwarded : String | semmle.label | forwarded : String |
+| SecurityService.java:54:43:54:51 | forwarded | semmle.label | forwarded |
+| SecurityServiceKt.kt:6:19:6:31 | value : String | semmle.label | value : String |
+| SecurityServiceKt.kt:7:43:7:47 | value | semmle.label | value |
+subpaths
+#select
+| SecurityService.java:15:43:15:47 | value | SecurityService.java:13:25:13:36 | value : String | SecurityService.java:15:43:15:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#guarded(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#guarded(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:19:43:19:47 | value | SecurityService.java:18:27:18:38 | value : String | SecurityService.java:19:43:19:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#unguarded(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#unguarded(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:25:47:25:51 | value | SecurityService.java:22:32:22:43 | value : String | SecurityService.java:25:47:25:51 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:33:43:33:47 | value | SecurityService.java:31:32:31:43 | value : String | SecurityService.java:33:43:33:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:43:47:43:51 | value | SecurityService.java:39:32:39:43 | value : String | SecurityService.java:43:47:43:51 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityService.java:54:43:54:51 | forwarded | SecurityService.java:49:31:49:42 | value : String | SecurityService.java:54:43:54:51 | forwarded | ACI1;scenario=binder_argument_to_sensitive_sink;entry=java\|method\|fixture.security.SecurityService#throughHelper(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityService.java;sink_owner=java\|method\|fixture.security.SecurityService#forward(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityService.java |
+| SecurityServiceKt.kt:7:43:7:47 | value | SecurityServiceKt.kt:6:19:6:31 | value : String | SecurityServiceKt.kt:7:43:7:47 | value | ACI1;scenario=binder_argument_to_sensitive_sink;entry=kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String);source_parameter_index=0;source_repository=;source_path=SecurityServiceKt.kt;sink_owner=kotlin\|method\|fixture.security.SecurityServiceKt#unguarded(java.lang.String);sink_callable=fixture.security.SensitiveStore.writeSecureSetting;sink_repository=;sink_path=SecurityServiceKt.kt |

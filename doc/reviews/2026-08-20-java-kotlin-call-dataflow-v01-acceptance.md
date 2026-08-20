@@ -16,13 +16,21 @@ an incomplete AOSP checkout.
 Executed from WSL against the Git worktree on 2026-08-20:
 
 ```text
-project suite: 211 passed in 25.95s
-root suite: 57 passed in 32.54s
+project suite: 223 passed in 24.52s
+root suite: 57 passed in 47.84s
+CodeQL fixtures: 4 passed in 3m17s
 ```
 
 These results verify Python contracts, typed schema, query normalization, identity
 reconciliation, materialization, corrections, validation, atomic publication, deployment
 payload, and documentation fixtures. They are not substitutes for a real CodeQL database.
+
+The dataflow fixture now contains a four-node interprocedural path through a helper method.
+The production query is a CodeQL path-problem; BQRS is interpreted as SARIF v2.1.0 and
+ordered `codeFlows/threadFlowLocations` are materialized as `dataflow_step` rows. Query
+source hashes participate in result-cache keys. Strong-evidence configuration now binds
+exact semantic caller/callee keys, source paths, relation kinds, security-trace semantics,
+and committed absence checks instead of accepting representative class existence.
 
 ## Real-AOSP evidence
 

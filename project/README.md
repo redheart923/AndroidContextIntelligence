@@ -146,6 +146,13 @@ bash scripts/rebuild_all.sh \
 `SECURITY_TRACE` 中组合。Git 管理的 `FACT_CORRECTION` 支持 suppress/replace/
 annotate/add，且不会改写提取器原始证据。
 
+数据流查询使用 CodeQL `PathGraph` 的 path-problem 输出。运行器将 BQRS 解释为
+SARIF v2.1.0，并按 `codeFlows/threadFlowLocations` 的真实顺序写入
+`dataflow_step`；不会再用 source/sink 两个端点伪造完整路径。查询文件 SHA-256
+参与结果缓存键，QL 内容变化会强制重新求值。严格 AOSP 验收读取
+`config/codeql.toml` 中精确到 semantic symbol key、源码路径和关系类型的正/负
+证据项，类节点存在本身不能通过门禁。
+
 运维命令：
 
 ```bash

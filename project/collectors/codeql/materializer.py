@@ -537,6 +537,51 @@ def _step_kind(value: ProgramValueRecord, count: int) -> str:
     return "argument"
 
 
+def _program_value_owner_id(
+    connection: sqlite3.Connection, value: ProgramValueRecord
+) -> str | None:
+    if value.symbol_key:
+        return _logical_method_id(connection, value.symbol_key)
+    rows = connection.execute(
+        """
+        SELECT logical_method_id,line_start,column_start,line_end,column_end
+        FROM semantic_definition
+        WHERE resolution_status='unique'
+          AND logical_method_id IS NOT NULL
+          AND repository=?
+          AND source_path=?
+          AND (
+            line_start < ? OR (line_start=? AND column_start<=?)
+          )
+          AND (
+            line_end > ? OR (line_end=? AND column_end>=?)
+          )
+        """,
+        (
+            value.span.repository_path,
+            value.span.source_path,
+            value.span.start_line,
+            value.span.start_line,
+            value.span.start_column,
+            value.span.end_line,
+            value.span.end_line,
+            value.span.end_column,
+        ),
+    ).fetchall()
+    if not rows:
+        return None
+    scored = [
+        (
+            (int(row[3]) - int(row[1]), int(row[4]) - int(row[2])),
+            str(row[0]),
+        )
+        for row in rows
+    ]
+    best_score = min(item[0] for item in scored)
+    candidates = {method_id for score, method_id in scored if score == best_score}
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def _materialize_path(
     connection: sqlite3.Connection,
     path: DataflowPathRecord,
@@ -547,7 +592,7 @@ def _materialize_path(
         return None
     value_ids: list[str] = []
     for value in path.steps:
-        owner_method_id = _logical_method_id(connection, value.symbol_key)
+        owner_method_id = _program_value_owner_id(connection, value)
         if owner_method_id is None:
             return None
         value_ids.append(_materialize_program_value(connection, value, owner_method_id, run))

@@ -45,4 +45,12 @@ public class SecurityService extends Binder {
             Binder.restoreCallingIdentity(inner);
         }
     }
+
+    public void throughHelper(String value) {
+        forward(value);
+    }
+
+    private void forward(String forwarded) {
+        SensitiveStore.writeSecureSetting(forwarded);
+    }
 }

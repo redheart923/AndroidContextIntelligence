@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from collectors.codeql.decode import DecodeError, decode_csv
+from collectors.codeql.decode import DecodeError, decode_csv, decode_sarif_paths
 from collectors.codeql.model import CallSiteRecord, DataflowPathRecord, DefinitionRecord
 
 
@@ -125,3 +126,71 @@ def test_decode_dataflow_preserves_source_and_sink_repository_spans() -> None:
     assert path.steps[-1].span.repository_path == "frameworks/base"
     assert path.steps[-1].span.source_path == "frameworks/base/demo/Store.java"
     assert path.steps[-1].span.start_line == 31
+
+
+def test_decode_sarif_preserves_real_ordered_path_locations() -> None:
+    message = (
+        "ACI1;scenario=binder_argument_to_sensitive_sink;"
+        "entry=java|method|demo.Service#entry(java.lang.String);"
+        "source_parameter_index=0;"
+        "source_repository=frameworks/base;"
+        "source_path=frameworks/base/demo/Service.java;"
+        "sink_owner=java|method|demo.Store#write(java.lang.String);"
+        "sink_callable=demo.Store.write;"
+        "sink_repository=frameworks/base;"
+        "sink_path=frameworks/base/demo/Store.java"
+    )
+    locations = []
+    for uri, line, text in (
+        ("file:///aosp/frameworks/base/demo/Service.java", 10, "value : String"),
+        ("file:///aosp/frameworks/base/demo/Helper.java", 20, "forward(value)"),
+        ("file:///aosp/frameworks/base/demo/Store.java", 31, "value"),
+    ):
+        locations.append(
+            {
+                "location": {
+                    "physicalLocation": {
+                        "artifactLocation": {"uri": uri},
+                        "region": {
+                            "startLine": line,
+                            "startColumn": 3,
+                            "endColumn": 12,
+                        },
+                    },
+                    "message": {"text": text},
+                }
+            }
+        )
+    sarif = {
+        "runs": [
+            {
+                "results": [
+                    {
+                        "message": {"text": message},
+                        "codeFlows": [
+                            {"threadFlows": [{"locations": locations}]}
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    records = decode_sarif_paths(
+        json.dumps(sarif),
+        query_version="1",
+        database_fingerprint="d" * 64,
+        repository_paths=("frameworks/base",),
+    )
+
+    assert len(records) == 1
+    path = records[0]
+    assert [step.ordinal for step in path.steps] == [0, 1, 2]
+    assert [step.span.source_path for step in path.steps] == [
+        "frameworks/base/demo/Service.java",
+        "frameworks/base/demo/Helper.java",
+        "frameworks/base/demo/Store.java",
+    ]
+    assert path.steps[0].symbol_key == "java|method|demo.Service#entry(java.lang.String)"
+    assert path.steps[1].symbol_key == ""
+    assert path.steps[2].symbol_key == "java|method|demo.Store#write(java.lang.String)"

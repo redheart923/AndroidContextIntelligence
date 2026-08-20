@@ -190,6 +190,59 @@ def test_interprocedural_path_uses_sink_owner_for_security_trace(
         ).fetchone()[0] == "CALL_SITE:sink"
 
 
+def test_path_intermediate_owner_is_resolved_from_smallest_containing_definition(
+    tmp_path: Path,
+) -> None:
+    database = graph_db(tmp_path)
+    with sqlite3.connect(database) as connection:
+        seed_node(connection, "JAVA_METHOD:helper", "JAVA_METHOD", HELPER_KEY, 30)
+        seed_node(
+            connection,
+            "SEMANTIC_DEFINITION:helper",
+            "SEMANTIC_DEFINITION",
+            HELPER_KEY,
+            30,
+        )
+        connection.execute(
+            """
+            INSERT INTO semantic_definition VALUES(
+              'SEMANTIC_DEFINITION:helper','run-1','JAVA_METHOD:helper',?,'java','method',
+              'frameworks/base',?,30,1,40,1,'unique',?,'{}'
+            )
+            """,
+            (HELPER_KEY, SOURCE, "i" * 64),
+        )
+    path = DataflowPathRecord(
+        "binder_argument_to_sensitive_sink",
+        OWNER_KEY,
+        HELPER_KEY,
+        (
+            ProgramValueRecord(
+                "value", OWNER_KEY, "parameter", 0, span(10), parameter_index=0
+            ),
+            ProgramValueRecord("forward(value)", "", "expression", 1, span(32)),
+            ProgramValueRecord("value", HELPER_KEY, "expression", 2, span(35)),
+        ),
+        "SystemServiceDataflow",
+        "1",
+        "d" * 64,
+    )
+
+    report = materialize_security_facts(database, (path,), run_context())
+
+    assert report.dataflow_paths == 1
+    with sqlite3.connect(database) as connection:
+        owner = connection.execute(
+            """
+            SELECT value.owner_method_id
+            FROM dataflow_step step
+            JOIN program_value value ON value.value_id=step.value_id
+            WHERE step.ordinal=1
+            """
+        ).fetchone()[0]
+    assert owner == "JAVA_METHOD:helper"
+
+
 def test_guard_is_not_materialized_as_dataflow(tmp_path: Path) -> None:
     database = graph_db(tmp_path)
     guard = GuardRecord(

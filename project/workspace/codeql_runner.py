@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from collectors.codeql.decode import decode_csv
+from collectors.codeql.decode import decode_csv, decode_sarif_paths
 from collectors.codeql.model import record_to_dict
 
 
@@ -63,10 +63,11 @@ class QueryArtifact:
     cache_status: str
     row_count: int
     raw_path: str
-    csv_path: str
+    decoded_path: str
+    decoded_format: str
     normalized_path: str
     raw_sha256: str
-    csv_sha256: str
+    decoded_sha256: str
     normalized_sha256: str
 
 
@@ -143,7 +144,7 @@ def _valid_artifact(artifact: QueryArtifact, cache_key: str) -> bool:
         return False
     for path_text, digest in (
         (artifact.raw_path, artifact.raw_sha256),
-        (artifact.csv_path, artifact.csv_sha256),
+        (artifact.decoded_path, artifact.decoded_sha256),
         (artifact.normalized_path, artifact.normalized_sha256),
     ):
         path = Path(path_text)
@@ -159,6 +160,26 @@ def _codeql_version(codeql_bin: Path, runner: Runner, cwd: Path) -> str:
         return str(value["version"])
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise CodeQLRunnerError(f"invalid CodeQL version JSON: {error}") from error
+
+
+def _repository_paths(database: Path) -> tuple[str, ...]:
+    manifest = database.parent / "manifest.json"
+    try:
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        repositories = value["repositories"]
+        paths = tuple(
+            sorted(
+                {str(item["path"]).strip("/") for item in repositories if item.get("path")},
+                key=lambda item: (-len(item), item),
+            )
+        )
+    except (OSError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise CodeQLRunnerError(
+            f"cannot read repository paths from CodeQL manifest {manifest}: {error}"
+        ) from error
+    if not paths:
+        raise CodeQLRunnerError("CodeQL manifest has no repository paths")
+    return paths
 
 
 def _publish(source: Path, destination: Path) -> None:
@@ -192,8 +213,13 @@ def run_queries(
     for query in queries:
         query_id = query.stem
         query_version = "1"
+        query_sha256 = _sha256_file(query)
         cache_key = query_result_key(
-            database_fingerprint, lock_hash, query_id, query_version, {}
+            database_fingerprint,
+            lock_hash,
+            query_id,
+            query_version,
+            {"query_sha256": query_sha256},
         )
         cache = output_dir / "cache" / cache_key
         cache_manifest = cache / "manifest.json"
@@ -210,7 +236,6 @@ def run_queries(
             partial.mkdir(parents=True, exist_ok=False)
             try:
                 bqrs = partial / f"{query_id}.bqrs"
-                csv_path = partial / f"{query_id}.csv"
                 normalized = partial / f"{query_id}.jsonl"
                 _run(
                     runner,
@@ -218,17 +243,44 @@ def run_queries(
                      "--output", str(bqrs), str(query)],
                     pack,
                 )
-                _run(
-                    runner,
-                    [str(codeql_bin), "bqrs", "decode", "--format=csv", "--entities=all",
-                     "--output", str(csv_path), str(bqrs)],
-                    pack,
-                )
-                records = decode_csv(
-                    query_id, csv_path.read_text(encoding="utf-8"),
-                    query_version=query_version,
-                    database_fingerprint=database_fingerprint,
-                )
+                if query_id == "SystemServiceDataflow":
+                    decoded = partial / f"{query_id}.sarif"
+                    decoded_format = "sarifv2.1.0"
+                    _run(
+                        runner,
+                        [
+                            str(codeql_bin), "bqrs", "interpret",
+                            "--format=sarifv2.1.0", "--max-paths=4",
+                            "--output", str(decoded),
+                            "-t=kind=path-problem",
+                            "-t=id=android-context/system-service-dataflow-path",
+                            "-t=name=SystemServiceDataflow",
+                            "-t=problem.severity=warning",
+                            "-t=precision=high",
+                            "--", str(bqrs),
+                        ],
+                        pack,
+                    )
+                    records = decode_sarif_paths(
+                        decoded.read_text(encoding="utf-8"),
+                        query_version=query_version,
+                        database_fingerprint=database_fingerprint,
+                        repository_paths=_repository_paths(database),
+                    )
+                else:
+                    decoded = partial / f"{query_id}.csv"
+                    decoded_format = "csv"
+                    _run(
+                        runner,
+                        [str(codeql_bin), "bqrs", "decode", "--format=csv", "--entities=all",
+                         "--output", str(decoded), str(bqrs)],
+                        pack,
+                    )
+                    records = decode_csv(
+                        query_id, decoded.read_text(encoding="utf-8"),
+                        query_version=query_version,
+                        database_fingerprint=database_fingerprint,
+                    )
                 normalized_text = "".join(
                     json.dumps(record_to_dict(record), ensure_ascii=False, sort_keys=True) + "\n"
                     for record in records
@@ -241,10 +293,11 @@ def run_queries(
                 artifact = QueryArtifact(
                     query_id=query_id, query_version=query_version, cache_key=cache_key,
                     cache_status="miss", row_count=len(records),
-                    raw_path=str(cache / bqrs.name), csv_path=str(cache / csv_path.name),
+                    raw_path=str(cache / bqrs.name), decoded_path=str(cache / decoded.name),
+                    decoded_format=decoded_format,
                     normalized_path=str(cache / normalized.name),
                     raw_sha256=_sha256_file(cache / bqrs.name),
-                    csv_sha256=_sha256_file(cache / csv_path.name),
+                    decoded_sha256=_sha256_file(cache / decoded.name),
                     normalized_sha256=_sha256_file(cache / normalized.name),
                 )
                 _atomic_json(cache / "manifest.json", asdict(artifact))
