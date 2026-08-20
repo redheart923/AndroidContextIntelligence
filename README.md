@@ -403,3 +403,53 @@ python -m workspace.permission_validation \
 `config/source_roots.local.toml`。canonical 默认值位于
 `config/source_roots.default.toml`，并始终包含 `frameworks/base/data`；本地
 include/exclude/languages 选择在升级后继续保留。
+
+## 14. Java/Kotlin 精确调用图与跨方法数据流
+
+该能力以现有 Ctags/AIDL/Service/Permission 图为稳定底座，用 CodeQL `java-kotlin`
+数据库补充精确调用点、候选目标、有界跨方法数据流、安全 guard 与 Binder identity 证据。
+CodeQL 是带 provenance 的精度适配层，不替代基础图，也不使用会排除 Kotlin 的
+`build-mode=none`。
+
+首次使用，或 AOSP revision、产品、variant、目标发生变化时，执行重型数据库准备：
+
+```bash
+cd /home/ts/android-context-intelligence
+bash scripts/prepare_codeql.sh \
+  --aosp-root /home/ts/aosp \
+  --codeql-bin /home/ts/.local/share/codeql/v2.26.3/codeql/codeql \
+  --product aosp_cf_x86_64_phone \
+  --variant userdebug \
+  --build-target services \
+  --build-target SystemUI \
+  --cache-root /home/ts/.cache/android-context-codeql
+```
+
+准备脚本会打印 verified CodeQL database 路径。随后执行原子重建：
+
+```bash
+bash scripts/rebuild_all.sh \
+  --codeql-db /path/to/verified/database \
+  --codeql-bin /home/ts/.local/share/codeql/v2.26.3/codeql/codeql \
+  --strict-capability call_graph \
+  --retain-history
+```
+
+不传 `--codeql-db` 时仍发布基础图，但 `call_graph` 和
+`interprocedural_dataflow` 明确标记为 `degraded`；请求这两个 strict capability
+时，缺少或不匹配的 CodeQL DB 会在 publication 前失败。调用关系区分 `MUST_CALL`、
+`MAY_CALL` 与未解析调用；`OBSERVED_CALL` 保留给未来运行时证据。
+
+纠错文件存放在 `config/corrections/*.toml`，支持 `suppress`、`replace`、
+`annotate`、`add`。原始事实不删除；有效视图叠加 `FACT_CORRECTION`，hash/revision
+不匹配会标记 stale。比较两次图谱：
+
+```bash
+python scripts/graph_diff.py \
+  --before data/history/<old>/android_context.db \
+  --after data/android_context.db \
+  --format json
+```
+
+当前范围不包含 C/C++/Rust、Native Binder、任意全程序污点传播或运行时调用观测。
+历史目录默认只保留报告；只有显式传入 `--retain-history-database` 才复制 SQLite。

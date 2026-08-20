@@ -48,6 +48,7 @@
 - [Permission Semantics Graph v0.1 Acceptance](reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md)：Permission 语义图的测试、真实 AOSP 重建、查询和确定性证据。
 - [Post-Permission Repository Architecture Review](reviews/2026-07-28-post-permission-repository-architecture-review.md)：Permission 完成后的全仓库风险复核与下一阶段边界。
 - [Trustworthy Multi-Source Ingestion v0.1 Acceptance](reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md)：安装生命周期、真实 AOSP 双构建、Vendor/发布恢复、性能和仓库门禁证据。
+- [Java/Kotlin Call and Dataflow Graph v0.1 Acceptance](reviews/2026-08-20-java-kotlin-call-dataflow-v01-acceptance.md)：CodeQL 数据库、真实 AOSP 强证据、纠错、原子发布与双构建指纹。
 
 ## 文档分类规范
 

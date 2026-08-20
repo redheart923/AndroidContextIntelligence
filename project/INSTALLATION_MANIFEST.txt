@@ -10,6 +10,7 @@ Managed top-level files:
   requirements-lock.txt
 
 Managed source directories:
+  codeql/
   collectors/
   config/
   configs/
@@ -57,6 +58,14 @@ and staged artifact ingestion. Vendor inputs remain outside data/, decompiled
 outputs use a content-addressed cache, and publication records artifact and
 tool provenance. Presence in this payload is not a claim of complete semantic
 coverage; verified coverage is reported by each graph build.
+
+Java/Kotlin call and interprocedural dataflow:
+  CodeQL pack: codeql/
+  Preparation: scripts/prepare_codeql.sh
+  Importer: python -m workspace.codeql_import
+  Corrections: config/corrections/*.toml
+  Validation: python -m workspace.call_dataflow_validation
+  Diff: scripts/graph_diff.py
 
 Repository-scoped symbol definitions:
   Definition node: SYMBOL_DEFINITION

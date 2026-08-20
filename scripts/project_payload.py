@@ -10,6 +10,7 @@ from typing import Any
 
 
 PAYLOAD_DIRECTORIES = (
+    "codeql",
     "collectors",
     "config",
     "configs",

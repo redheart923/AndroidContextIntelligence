@@ -127,3 +127,34 @@ platform privapp 策略不会因旧本地覆盖而从扫描范围消失。
 使用 `queries/symbol_definitions.sql` 查看所有仓库定义。需要源码定位时应选择
 definition，语义边继续连接 logical symbol；不要把 logical node 的单一
 `source_path` 当作唯一来源。
+
+## Java/Kotlin call/dataflow workflow
+
+`codeql/` 是受管 payload，包含 version-locked `java-kotlin` query pack。先用
+`scripts/prepare_codeql.sh` 针对真实 AOSP 构建 `services` 与 `SystemUI`，再执行：
+
+```bash
+bash scripts/rebuild_all.sh \
+  --codeql-db /path/to/verified/database \
+  --strict-capability interprocedural_dataflow \
+  --corrections-dir config/corrections \
+  --retain-history
+```
+
+能力名为 `call_graph` 和 `interprocedural_dataflow`。调用事实使用 `MUST_CALL`、
+`MAY_CALL` 与 `UNRESOLVED_CALL`；数据流、guard 和 Binder identity 分表保存，仅在
+`SECURITY_TRACE` 中组合。Git 管理的 `FACT_CORRECTION` 支持 suppress/replace/
+annotate/add，且不会改写提取器原始证据。
+
+运维命令：
+
+```bash
+python scripts/graph_fingerprint.py --db data/android_context.db --format json
+python scripts/graph_diff.py --before before.db --after after.db --format text
+python -m workspace.call_dataflow_validation \
+  --db data/android_context.db \
+  --report data/workspace/call-dataflow-validation.json
+```
+
+无 `--codeql-db` 的默认构建只保证基础图，相关能力状态为 degraded；strict 模式
+要求 verified DB、唯一身份 reconciliation、强证据与无 stale correction。

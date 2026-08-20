@@ -94,3 +94,28 @@ def test_documentation_index_links_permission_acceptance() -> None:
 
     assert "Permission Semantics Graph v0.1 Acceptance" in text
     assert "reviews/2026-07-22-permission-semantics-graph-v01-acceptance.md" in text
+
+
+def test_readmes_document_call_dataflow_workflow() -> None:
+    combined = README.read_text(encoding="utf-8") + PROJECT_README.read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "prepare_codeql.sh",
+        "--cache-root",
+        "--codeql-db",
+        "call_graph",
+        "interprocedural_dataflow",
+        "MUST_CALL",
+        "MAY_CALL",
+        "FACT_CORRECTION",
+        "graph_diff.py",
+    ):
+        assert token in combined
+
+
+def test_documentation_index_links_call_dataflow_acceptance() -> None:
+    text = DOC_INDEX.read_text(encoding="utf-8")
+
+    assert "Java/Kotlin Call and Dataflow Graph v0.1 Acceptance" in text
+    assert "reviews/2026-08-20-java-kotlin-call-dataflow-v01-acceptance.md" in text

@@ -27,6 +27,7 @@ def relative_paths(root: Path) -> tuple[str, ...]:
 
 def test_payload_contract_declares_canonical_project_entries() -> None:
     assert PAYLOAD_DIRECTORIES == (
+        "codeql",
         "collectors",
         "config",
         "configs",
@@ -43,6 +44,13 @@ def test_payload_contract_declares_canonical_project_entries() -> None:
         "README.md",
         "requirements-lock.txt",
     )
+
+
+def test_payload_contract_includes_codeql_pack() -> None:
+    assert "codeql" in PAYLOAD_DIRECTORIES
+    paths = relative_paths(Path(__file__).resolve().parents[1] / "project")
+    assert "codeql/qlpack.yml" in paths
+    assert "codeql/queries/CallSites.ql" in paths
 
 
 def test_iter_payload_files_returns_only_managed_files_in_stable_order(
@@ -127,4 +135,3 @@ def test_compare_payload_is_clean_for_equal_managed_trees(tmp_path: Path) -> Non
     assert diff.removed == ()
     assert diff.modified == ()
     assert diff.is_clean
-
