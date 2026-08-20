@@ -1,0 +1,16 @@
+[database]
+language = "java-kotlin"
+default_build_targets = ["services", "SystemUI"]
+
+[acceptance]
+minimum_identity_reconciliation_percent = 95
+required_representatives = [
+  "com.android.server.am.ActivityManagerService",
+  "com.android.server.pm.PackageManagerService.IPackageManagerImpl",
+  "com.android.systemui.statusbar.CommandQueue",
+]
+
+[scenarios.system_service_security]
+entry_kinds = ["binder", "aidl"]
+checks = ["permission", "app_ops", "cross_user"]
+identity_transitions = ["clearCallingIdentity", "restoreCallingIdentity"]
