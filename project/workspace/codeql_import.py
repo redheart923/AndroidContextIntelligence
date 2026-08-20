@@ -196,16 +196,22 @@ def _validate_database(codeql_database: Path, plan_path: Path) -> Any:
     planned = {
         str(item["path"]): (str(item.get("revision", "")), str(item.get("inventory_sha256", "")))
         for item in plan.get("repositories", [])
-        if item.get("enabled")
+        if item.get("enabled") and item.get("status") == "available"
     }
     observed = {
         item.path: (item.revision, item.inventory_sha256)
         for item in manifest.repositories
     }
+    if set(planned) != set(observed):
+        raise CodeQLImportError(
+            "CodeQL repository set mismatch: "
+            f"missing={sorted(set(planned) - set(observed))} "
+            f"extra={sorted(set(observed) - set(planned))}"
+        )
     mismatches = {
         path: (identity, observed.get(path))
         for path, identity in planned.items()
-        if path in observed and observed[path] != identity
+        if observed[path] != identity
     }
     if mismatches:
         raise CodeQLImportError(f"CodeQL source identity mismatch: {mismatches}")
