@@ -60,11 +60,36 @@ def _validate_call_endpoints(connection: sqlite3.Connection) -> None:
         )
     inconsistent = connection.execute(
         """
-        SELECT call_site_id, resolution_status, candidate_count
-        FROM call_site
-        WHERE (resolution_status='resolved' AND candidate_count != 1)
-           OR (resolution_status='ambiguous' AND candidate_count < 2)
-           OR (resolution_status IN ('unresolved','unsupported') AND candidate_count != 0)
+        SELECT
+          cs.call_site_id,
+          cs.resolution_status,
+          cs.candidate_count,
+          COUNT(ct.callee_method_id) AS accepted_target_count
+        FROM call_site cs
+        LEFT JOIN call_target ct ON ct.call_site_id=cs.call_site_id
+        GROUP BY cs.call_site_id, cs.resolution_status, cs.candidate_count
+        HAVING (
+          cs.resolution_status='resolved'
+          AND (
+            cs.candidate_count < 1
+            OR COUNT(ct.callee_method_id) != cs.candidate_count
+            OR (
+              SUM(CASE WHEN ct.relation_kind='must' THEN 1 ELSE 0 END) > 0
+              AND (
+                cs.candidate_count != 1
+                OR SUM(CASE WHEN ct.relation_kind='may' THEN 1 ELSE 0 END) > 0
+              )
+            )
+          )
+        )
+        OR (
+          cs.resolution_status='ambiguous'
+          AND (cs.candidate_count < 1 OR COUNT(ct.callee_method_id) != 0)
+        )
+        OR (
+          cs.resolution_status IN ('unresolved','unsupported')
+          AND COUNT(ct.callee_method_id) != 0
+        )
         """
     ).fetchall()
     if inconsistent:

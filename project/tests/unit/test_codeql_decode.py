@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from collectors.codeql.decode import DecodeError, decode_csv
-from collectors.codeql.model import CallSiteRecord, DefinitionRecord
+from collectors.codeql.model import CallSiteRecord, DataflowPathRecord, DefinitionRecord
 
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/codeql"
@@ -92,3 +92,36 @@ def test_decode_rejects_negative_source_span_and_invalid_csv() -> None:
             query_version="1",
             database_fingerprint="d" * 64,
         )
+
+
+def test_decode_dataflow_preserves_source_and_sink_repository_spans() -> None:
+    csv_text = "\n".join(
+        (
+            "schema_version,scenario,entry_symbol_key,source_parameter_index,"
+            "source_value,source_repository_path,source_path,source_line,"
+            "source_column_start,source_column_end,sink_owner_symbol_key,"
+            "sink_callable,sink_repository_path,sink_path,sink_line,"
+            "sink_column_start,sink_column_end,source_identity,sink_identity",
+            "1,binder_argument_to_sensitive_sink,demo.Service#entry(java.lang.String),"
+            "0,value,frameworks/base,frameworks/base/demo/Service.java,10,9,14,"
+            "demo.Store#write(java.lang.String),demo.Store.write,frameworks/base,"
+            "frameworks/base/demo/Store.java,31,5,22,value,write(value)",
+        )
+    )
+
+    records = decode_csv(
+        "SystemServiceDataflow",
+        csv_text,
+        query_version="1",
+        database_fingerprint="d" * 64,
+    )
+
+    assert len(records) == 1
+    path = records[0]
+    assert isinstance(path, DataflowPathRecord)
+    assert path.steps[0].span.repository_path == "frameworks/base"
+    assert path.steps[0].span.source_path == "frameworks/base/demo/Service.java"
+    assert path.steps[0].span.start_line == 10
+    assert path.steps[-1].span.repository_path == "frameworks/base"
+    assert path.steps[-1].span.source_path == "frameworks/base/demo/Store.java"
+    assert path.steps[-1].span.start_line == 31

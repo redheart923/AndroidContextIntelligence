@@ -10,6 +10,7 @@ from collectors.codeql.model import (
     DefinitionRecord,
     SourceSpan,
 )
+from workspace.call_dataflow_validation import validate_call_dataflow
 from workspace.schema_migrations import apply_migrations
 
 
@@ -163,6 +164,8 @@ def test_polymorphic_call_retains_all_may_targets(tmp_path: Path) -> None:
     assert relations == [("may",), ("may",)]
     assert edge_count(database, "MAY_CALL") == 2
     assert edge_count(database, "CALLS") == 2
+    report = validate_call_dataflow(database, require_aosp_evidence=False)
+    assert report.metrics["accepted_targets"] == 2
 
 
 def test_ambiguous_callee_is_diagnostic_not_accepted_edge(tmp_path: Path) -> None:

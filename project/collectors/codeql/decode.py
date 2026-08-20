@@ -36,8 +36,10 @@ QUERY_COLUMNS = {
     "CallSites": CALL_COLUMNS,
     "SystemServiceDataflow": {
         "schema_version", "scenario", "entry_symbol_key", "source_parameter_index",
-        "source_value", "sink_owner_symbol_key", "sink_callable", "source_path",
-        "sink_line", "source_identity", "sink_identity",
+        "source_value", "source_repository_path", "source_path", "source_line",
+        "source_column_start", "source_column_end", "sink_owner_symbol_key",
+        "sink_callable", "sink_repository_path", "sink_path", "sink_line",
+        "sink_column_start", "sink_column_end", "source_identity", "sink_identity",
     },
     "SystemServiceGuards": {
         "schema_version", "owner_symbol_key", "guard_callable", "guard_line",
@@ -159,8 +161,21 @@ def _decode_calls(
     return tuple(definitions) + tuple(sites)
 
 
-def _line_span(source_path: str, line: int) -> SourceSpan:
-    return SourceSpan("", source_path, line, 1, line, 1)
+def _line_span(
+    repository_path: str,
+    source_path: str,
+    line: int,
+    column_start: int,
+    column_end: int,
+) -> SourceSpan:
+    return SourceSpan(
+        repository_path,
+        source_path,
+        line,
+        column_start,
+        line,
+        column_end,
+    )
 
 
 def _decode_dataflow(
@@ -168,14 +183,26 @@ def _decode_dataflow(
 ) -> tuple[NormalizedRecord, ...]:
     result: list[DataflowPathRecord] = []
     for row in rows:
-        line = _integer(row, "sink_line")
-        span = _line_span(row["source_path"], line)
+        source_span = _line_span(
+            row["source_repository_path"],
+            row["source_path"],
+            _integer(row, "source_line"),
+            _integer(row, "source_column_start"),
+            _integer(row, "source_column_end"),
+        )
+        sink_span = _line_span(
+            row["sink_repository_path"],
+            row["sink_path"],
+            _integer(row, "sink_line"),
+            _integer(row, "sink_column_start"),
+            _integer(row, "sink_column_end"),
+        )
         source = ProgramValueRecord(
-            row["source_identity"], row["entry_symbol_key"], "parameter", 0, span,
+            row["source_identity"], row["entry_symbol_key"], "parameter", 0, source_span,
             parameter_index=_integer(row, "source_parameter_index"),
         )
         sink = ProgramValueRecord(
-            row["sink_identity"], row["sink_owner_symbol_key"], "expression", 1, span
+            row["sink_identity"], row["sink_owner_symbol_key"], "expression", 1, sink_span
         )
         result.append(
             DataflowPathRecord(
