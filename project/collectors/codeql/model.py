@@ -114,10 +114,16 @@ class ProgramValueRecord:
     value_kind: str
     ordinal: int
     span: SourceSpan
+    parameter_index: int | None = None
+    declared_type: str | None = None
 
     def __post_init__(self) -> None:
         if self.ordinal < 0:
             raise RecordError("program-value ordinal must not be negative")
+        if self.value_kind == "parameter" and self.parameter_index is None:
+            raise RecordError("parameter program value requires parameter_index")
+        if self.value_kind != "parameter" and self.parameter_index is not None:
+            raise RecordError("non-parameter program value cannot have parameter_index")
 
 
 @dataclass(frozen=True)

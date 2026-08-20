@@ -171,10 +171,11 @@ def _decode_dataflow(
         line = _integer(row, "sink_line")
         span = _line_span(row["source_path"], line)
         source = ProgramValueRecord(
-            row["source_identity"], row["entry_symbol_key"], "source_parameter", 0, span
+            row["source_identity"], row["entry_symbol_key"], "parameter", 0, span,
+            parameter_index=_integer(row, "source_parameter_index"),
         )
         sink = ProgramValueRecord(
-            row["sink_identity"], row["sink_owner_symbol_key"], "sink_argument", 1, span
+            row["sink_identity"], row["sink_owner_symbol_key"], "expression", 1, span
         )
         result.append(
             DataflowPathRecord(

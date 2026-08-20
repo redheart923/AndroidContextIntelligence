@@ -9,7 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .identity import ReconciliationResult, reconcile_definition
-from .model import CallSiteRecord, DefinitionRecord, NormalizedRecord
+from .model import (
+    CallSiteRecord,
+    DataflowPathRecord,
+    DefinitionRecord,
+    GuardRecord,
+    IdentityTransitionRecord,
+    NormalizedRecord,
+    ProgramValueRecord,
+)
 
 
 EXTRACTOR = "codeql-java-kotlin"
@@ -31,6 +39,15 @@ class CallMaterializationReport:
     ambiguous_sites: int
     unresolved_sites: int
     skipped_callers: int
+
+
+@dataclass(frozen=True)
+class SecurityMaterializationReport:
+    program_values: int
+    dataflow_paths: int
+    guards: int
+    identity_transitions: int
+    security_traces: int
 
 
 def _digest(*values: object) -> str:
@@ -406,6 +423,425 @@ def materialize_call_graph(
             definitions=len(definition_records), call_sites=materialized_sites,
             accepted_targets=accepted_targets, ambiguous_sites=ambiguous_sites,
             unresolved_sites=unresolved_sites, skipped_callers=skipped_callers,
+        )
+    except BaseException:
+        connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+def _logical_method_id(
+    connection: sqlite3.Connection,
+    symbol_key: str,
+) -> str | None:
+    rows = connection.execute(
+        """
+        SELECT DISTINCT logical_method_id
+        FROM semantic_definition
+        WHERE semantic_symbol_key = ?
+          AND resolution_status = 'unique'
+          AND logical_method_id IS NOT NULL
+        ORDER BY logical_method_id
+        """,
+        (symbol_key,),
+    ).fetchall()
+    return str(rows[0][0]) if len(rows) == 1 else None
+
+
+def _call_site_at(
+    connection: sqlite3.Connection,
+    *,
+    owner_method_id: str,
+    source_path: str,
+    line: int,
+) -> str | None:
+    rows = connection.execute(
+        """
+        SELECT call_site_id
+        FROM call_site
+        WHERE caller_method_id = ? AND source_path = ? AND line_start = ?
+        ORDER BY call_site_id
+        """,
+        (owner_method_id, source_path, line),
+    ).fetchall()
+    return str(rows[0][0]) if len(rows) == 1 else None
+
+
+def _program_value_id(owner_method_id: str, value: ProgramValueRecord) -> str:
+    return "PROGRAM_VALUE:" + _digest(
+        owner_method_id, value.value_kind, value.parameter_index, value.declared_type,
+        value.identity, value.span.repository_path, value.span.source_path,
+        value.span.start_line, value.span.start_column, value.span.end_line,
+        value.span.end_column,
+    )
+
+
+def _materialize_program_value(
+    connection: sqlite3.Connection,
+    value: ProgramValueRecord,
+    owner_method_id: str,
+    run: MaterializationRun,
+) -> str:
+    value_id = _program_value_id(owner_method_id, value)
+    expression_hash = hashlib.sha256(value.identity.encode("utf-8")).hexdigest()
+    content_hash = _digest(
+        value_id, run.run_id, value.identity, value.value_kind, value.parameter_index,
+        value.declared_type,
+    )
+    properties = {"identity": value.identity, "ordinal": value.ordinal}
+    _upsert_node(
+        connection, node_id=value_id, node_type="PROGRAM_VALUE",
+        qualified_name=value_id, display_name=value.identity, properties=properties,
+        source_path=value.span.source_path, line_start=value.span.start_line,
+        line_end=value.span.end_line, source_revision=run.source_revision,
+        content_hash=content_hash,
+    )
+    connection.execute(
+        """
+        INSERT INTO program_value(
+          value_id,run_id,owner_method_id,value_kind,parameter_index,declared_type,
+          repository,source_path,line_start,column_start,line_end,column_end,
+          expression_hash,content_hash,properties_json
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(value_id) DO UPDATE SET
+          run_id=excluded.run_id,
+          owner_method_id=excluded.owner_method_id,
+          content_hash=excluded.content_hash,
+          properties_json=excluded.properties_json
+        """,
+        (
+            value_id, run.run_id, owner_method_id, value.value_kind,
+            value.parameter_index, value.declared_type, value.span.repository_path,
+            value.span.source_path, value.span.start_line, value.span.start_column,
+            value.span.end_line, value.span.end_column, expression_hash, content_hash,
+            _json(properties),
+        ),
+    )
+    _upsert_edge(
+        connection, edge_type="VALUE_IN_METHOD", from_node_id=value_id,
+        to_node_id=owner_method_id, properties={"run_id": run.run_id},
+        source_path=value.span.source_path, line_start=value.span.start_line,
+        line_end=value.span.end_line, source_revision=run.source_revision,
+    )
+    return value_id
+
+
+def _step_kind(value: ProgramValueRecord, count: int) -> str:
+    if value.ordinal == 0:
+        return "source"
+    if value.ordinal == count - 1:
+        return "sink"
+    if value.value_kind == "return":
+        return "return"
+    return "argument"
+
+
+def _materialize_path(
+    connection: sqlite3.Connection,
+    path: DataflowPathRecord,
+    run: MaterializationRun,
+) -> tuple[str, str, str, str] | None:
+    entry_method_id = _logical_method_id(connection, path.entry_symbol_key)
+    if entry_method_id is None:
+        return None
+    value_ids: list[str] = []
+    for value in path.steps:
+        owner_method_id = _logical_method_id(connection, value.symbol_key)
+        if owner_method_id is None:
+            return None
+        value_ids.append(_materialize_program_value(connection, value, owner_method_id, run))
+    path_id = "DATAFLOW_PATH:" + _digest(path.content_hash, run.evidence_id)
+    first = path.steps[0]
+    last = path.steps[-1]
+    properties = {
+        "database_fingerprint": path.database_fingerprint,
+        "entry_symbol_key": path.entry_symbol_key,
+        "query_id": path.query_id,
+        "query_version": path.query_version,
+        "sink_symbol_key": path.sink_symbol_key,
+    }
+    _upsert_node(
+        connection, node_id=path_id, node_type="DATAFLOW_PATH",
+        qualified_name=path_id, display_name=path.scenario, properties=properties,
+        source_path=last.span.source_path, line_start=first.span.start_line,
+        line_end=last.span.end_line, source_revision=run.source_revision,
+        content_hash=path.content_hash,
+    )
+    connection.execute("DELETE FROM dataflow_step WHERE path_id=?", (path_id,))
+    connection.execute(
+        """
+        INSERT INTO dataflow_path(
+          path_id,run_id,scenario_id,source_value_id,sink_value_id,path_kind,
+          confidence_class,step_count,path_fingerprint,evidence_id,status,
+          repository,source_path,properties_json
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(path_id) DO UPDATE SET
+          run_id=excluded.run_id,
+          step_count=excluded.step_count,
+          path_fingerprint=excluded.path_fingerprint,
+          evidence_id=excluded.evidence_id,
+          status=excluded.status,
+          properties_json=excluded.properties_json
+        """,
+        (
+            path_id, run.run_id, path.scenario, value_ids[0], value_ids[-1],
+            "global_value_flow", "codeql_proven", len(value_ids), path.content_hash,
+            run.evidence_id, "accepted", last.span.repository_path,
+            last.span.source_path, _json(properties),
+        ),
+    )
+    for value, value_id in zip(path.steps, value_ids, strict=True):
+        kind = _step_kind(value, len(value_ids))
+        connection.execute(
+            """
+            INSERT INTO dataflow_step VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                path_id, value.ordinal, value_id, kind, value.span.repository_path,
+                value.span.source_path, value.span.start_line, value.span.start_column,
+                value.span.end_line, value.span.end_column, value.identity,
+                _digest(path_id, value.ordinal, value_id, kind),
+            ),
+        )
+    _upsert_edge(
+        connection, edge_type="FLOW_SOURCE", from_node_id=path_id,
+        to_node_id=value_ids[0], properties={"evidence_id": run.evidence_id},
+        source_path=first.span.source_path, line_start=first.span.start_line,
+        line_end=first.span.end_line, source_revision=run.source_revision,
+    )
+    _upsert_edge(
+        connection, edge_type="FLOW_SINK", from_node_id=path_id,
+        to_node_id=value_ids[-1], properties={"evidence_id": run.evidence_id},
+        source_path=last.span.source_path, line_start=last.span.start_line,
+        line_end=last.span.end_line, source_revision=run.source_revision,
+    )
+    return path_id, entry_method_id, last.span.source_path, str(last.span.start_line)
+
+
+def _insert_trace_step(
+    connection: sqlite3.Connection,
+    trace_id: str,
+    ordinal: int,
+    kind: str,
+    *,
+    call_site_id: str | None = None,
+    dataflow_path_id: str | None = None,
+    guard_call_site_id: str | None = None,
+    identity_call_site_id: str | None = None,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO security_trace_step(
+          trace_id,ordinal,step_kind,call_site_id,dataflow_path_id,
+          guard_call_site_id,identity_call_site_id,content_hash
+        ) VALUES(?,?,?,?,?,?,?,?)
+        """,
+        (
+            trace_id, ordinal, kind, call_site_id, dataflow_path_id,
+            guard_call_site_id, identity_call_site_id,
+            _digest(trace_id, ordinal, kind, call_site_id, dataflow_path_id,
+                    guard_call_site_id, identity_call_site_id),
+        ),
+    )
+
+
+def materialize_security_facts(
+    database: Path,
+    records: tuple[NormalizedRecord, ...],
+    run: MaterializationRun,
+) -> SecurityMaterializationReport:
+    paths = tuple(record for record in records if isinstance(record, DataflowPathRecord))
+    guards = tuple(record for record in records if isinstance(record, GuardRecord))
+    identities = tuple(
+        record for record in records if isinstance(record, IdentityTransitionRecord)
+    )
+    connection = sqlite3.connect(database)
+    value_count = 0
+    path_count = 0
+    guard_count = 0
+    identity_count = 0
+    trace_count = 0
+    try:
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("BEGIN IMMEDIATE")
+        for path in paths:
+            materialized = _materialize_path(connection, path, run)
+            if materialized is None:
+                continue
+            path_id, entry_method_id, source_path, sink_line_text = materialized
+            sink_line = int(sink_line_text)
+            sink_call_site_id = _call_site_at(
+                connection, owner_method_id=entry_method_id,
+                source_path=source_path, line=sink_line,
+            )
+            value_count += len(path.steps)
+            path_count += 1
+            if sink_call_site_id is None:
+                continue
+            connection.execute(
+                """
+                DELETE FROM edge
+                WHERE from_node_id = ?
+                  AND edge_type IN (
+                    'GUARDED_BY','IDENTITY_CLEARED_BY','IDENTITY_RESTORED_BY'
+                  )
+                """,
+                (sink_call_site_id,),
+            )
+            matching_guards: list[tuple[GuardRecord, str]] = []
+            for guard in guards:
+                owner = _logical_method_id(connection, guard.owner_symbol_key)
+                if owner != entry_method_id or guard.source_path != source_path:
+                    continue
+                guard_site = _call_site_at(
+                    connection, owner_method_id=entry_method_id,
+                    source_path=source_path, line=guard.guard_line,
+                )
+                if guard_site is not None and guard.sink_line == sink_line:
+                    matching_guards.append((guard, guard_site))
+            matching_identities: list[tuple[IdentityTransitionRecord, str, str | None]] = []
+            for identity in identities:
+                owner = _logical_method_id(connection, identity.owner_symbol_key)
+                if owner != entry_method_id or identity.source_path != source_path:
+                    continue
+                clear_site = _call_site_at(
+                    connection, owner_method_id=entry_method_id,
+                    source_path=source_path, line=identity.clear_line,
+                )
+                restore_site = (
+                    _call_site_at(
+                        connection, owner_method_id=entry_method_id,
+                        source_path=source_path, line=identity.restore_line,
+                    )
+                    if identity.restore_line is not None else None
+                )
+                if clear_site is not None:
+                    matching_identities.append((identity, clear_site, restore_site))
+            if any(item[0].status != "paired_all_exits" for item in matching_identities):
+                status = "identity_unpaired"
+            elif matching_guards:
+                status = "guarded"
+            elif matching_identities:
+                status = "identity_paired"
+            else:
+                status = "unguarded"
+            trace_id = "SECURITY_TRACE:" + _digest(
+                path_id, entry_method_id, sink_call_site_id, run.run_id
+            )
+            trace_properties = {
+                "evidence_id": run.evidence_id,
+                "path_id": path_id,
+                "query_versions": sorted(
+                    {path.query_version}
+                    | {guard.query_version for guard, _ in matching_guards}
+                    | {identity.query_version for identity, _, _ in matching_identities}
+                ),
+            }
+            _upsert_node(
+                connection, node_id=trace_id, node_type="SECURITY_TRACE",
+                qualified_name=trace_id, display_name=path.scenario,
+                properties=trace_properties, source_path=source_path,
+                line_start=sink_line, line_end=sink_line,
+                source_revision=run.source_revision,
+                content_hash=_digest(trace_id, status, trace_properties),
+            )
+            connection.execute("DELETE FROM security_trace_step WHERE trace_id=?", (trace_id,))
+            connection.execute(
+                """
+                INSERT INTO security_trace(
+                  trace_id,run_id,scenario_id,entry_method_id,sink_call_site_id,
+                  guard_count,identity_transition_count,trace_fingerprint,status,
+                  repository,source_path,properties_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(trace_id) DO UPDATE SET
+                  guard_count=excluded.guard_count,
+                  identity_transition_count=excluded.identity_transition_count,
+                  trace_fingerprint=excluded.trace_fingerprint,
+                  status=excluded.status,
+                  properties_json=excluded.properties_json
+                """,
+                (
+                    trace_id, run.run_id, path.scenario, entry_method_id,
+                    sink_call_site_id, len(matching_guards), len(matching_identities),
+                    _digest(
+                        path.content_hash,
+                        [guard.content_hash for guard, _ in matching_guards],
+                        [identity.content_hash for identity, _, _ in matching_identities],
+                    ),
+                    status, path.steps[-1].span.repository_path, source_path,
+                    _json(trace_properties),
+                ),
+            )
+            _upsert_edge(
+                connection, edge_type="TRACE_ENTRY", from_node_id=trace_id,
+                to_node_id=entry_method_id, properties={"run_id": run.run_id},
+                source_path=source_path, line_start=sink_line, line_end=sink_line,
+                source_revision=run.source_revision,
+            )
+            _upsert_edge(
+                connection, edge_type="TRACE_SINK", from_node_id=trace_id,
+                to_node_id=sink_call_site_id, properties={"run_id": run.run_id},
+                source_path=source_path, line_start=sink_line, line_end=sink_line,
+                source_revision=run.source_revision,
+            )
+            ordinal = 0
+            _insert_trace_step(
+                connection, trace_id, ordinal, "call_site", call_site_id=sink_call_site_id
+            )
+            ordinal += 1
+            _insert_trace_step(
+                connection, trace_id, ordinal, "dataflow_path", dataflow_path_id=path_id
+            )
+            ordinal += 1
+            for guard, guard_site in matching_guards:
+                _upsert_edge(
+                    connection, edge_type="GUARDED_BY", from_node_id=sink_call_site_id,
+                    to_node_id=guard_site,
+                    properties={"relation_kind": guard.relation_kind, "run_id": run.run_id},
+                    source_path=source_path, line_start=guard.guard_line,
+                    line_end=guard.guard_line, source_revision=run.source_revision,
+                )
+                _insert_trace_step(
+                    connection, trace_id, ordinal, "guard", guard_call_site_id=guard_site
+                )
+                ordinal += 1
+                guard_count += 1
+            for identity, clear_site, restore_site in matching_identities:
+                _upsert_edge(
+                    connection, edge_type="IDENTITY_CLEARED_BY",
+                    from_node_id=sink_call_site_id, to_node_id=clear_site,
+                    properties={"status": identity.status, "run_id": run.run_id},
+                    source_path=source_path, line_start=identity.clear_line,
+                    line_end=identity.clear_line, source_revision=run.source_revision,
+                )
+                _insert_trace_step(
+                    connection, trace_id, ordinal, "identity_clear",
+                    identity_call_site_id=clear_site,
+                )
+                ordinal += 1
+                if identity.status == "paired_all_exits" and restore_site is not None:
+                    _upsert_edge(
+                        connection, edge_type="IDENTITY_RESTORED_BY",
+                        from_node_id=sink_call_site_id, to_node_id=restore_site,
+                        properties={"status": identity.status, "run_id": run.run_id},
+                        source_path=source_path, line_start=identity.restore_line or 1,
+                        line_end=identity.restore_line or 1,
+                        source_revision=run.source_revision,
+                    )
+                    _insert_trace_step(
+                        connection, trace_id, ordinal, "identity_restore",
+                        identity_call_site_id=restore_site,
+                    )
+                    ordinal += 1
+                identity_count += 1
+            trace_count += 1
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(f"foreign-key violations: {violations[:5]}")
+        connection.commit()
+        return SecurityMaterializationReport(
+            value_count, path_count, guard_count, identity_count, trace_count
         )
     except BaseException:
         connection.rollback()
