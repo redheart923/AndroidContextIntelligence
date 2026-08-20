@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from collectors.codeql.decode import DecodeError, decode_csv
+from collectors.codeql.model import CallSiteRecord, DefinitionRecord
+
+
+FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/codeql"
+
+
+def load_fixture(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def test_decode_call_site_preserves_may_candidates_and_unresolved() -> None:
+    records = decode_csv(
+        "CallSites",
+        load_fixture("call-sites.csv"),
+        query_version="1",
+        database_fingerprint="d" * 64,
+    )
+    definitions = [record for record in records if isinstance(record, DefinitionRecord)]
+    sites = [record for record in records if isinstance(record, CallSiteRecord)]
+
+    assert len(definitions) == 1
+    assert len(sites) == 2
+    assert sites[0].candidate_count == 2
+    assert {target.relation_kind for target in sites[0].targets} == {"may"}
+    assert {target.callee_symbol_key for target in sites[0].targets} == {
+        "demo.First#run(java.lang.String)",
+        "demo.Second#run(java.lang.String)",
+    }
+    assert sites[1].targets == ()
+    assert sites[1].unresolved_reason == "missing_dependency"
+    assert sites[0].content_hash == sites[0].content_hash
+    assert len(sites[0].content_hash) == 64
+
+
+def test_decode_rejects_unknown_schema_missing_column_and_invalid_relation() -> None:
+    source = load_fixture("call-sites.csv")
+
+    with pytest.raises(DecodeError, match="schema_version"):
+        decode_csv(
+            "CallSites",
+            source.replace("1,definition", "2,definition", 1),
+            query_version="1",
+            database_fingerprint="d" * 64,
+        )
+
+    header, *rows = source.splitlines()
+    columns = header.split(",")
+    relation_index = columns.index("relation_kind")
+    malformed_header = ",".join(
+        column for column in columns if column != "source_path"
+    )
+    with pytest.raises(DecodeError, match="missing required columns"):
+        decode_csv(
+            "CallSites",
+            "\n".join((malformed_header, *rows)),
+            query_version="1",
+            database_fingerprint="d" * 64,
+        )
+
+    invalid = source.replace(",virtual,may,2,", ",virtual,probable,2,", 1)
+    assert relation_index > 0
+    with pytest.raises(DecodeError, match="relation_kind"):
+        decode_csv(
+            "CallSites",
+            invalid,
+            query_version="1",
+            database_fingerprint="d" * 64,
+        )
+
+
+def test_decode_rejects_negative_source_span_and_invalid_csv() -> None:
+    source = load_fixture("call-sites.csv")
+    with pytest.raises(DecodeError, match="source span"):
+        decode_csv(
+            "CallSites",
+            source.replace(",12,7,12,21,", ",-1,7,12,21,", 1),
+            query_version="1",
+            database_fingerprint="d" * 64,
+        )
+
+    with pytest.raises(DecodeError, match="CSV"):
+        decode_csv(
+            "CallSites",
+            source.splitlines()[0] + '\n1,"unterminated',
+            query_version="1",
+            database_fingerprint="d" * 64,
+        )

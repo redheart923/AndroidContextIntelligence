@@ -1,0 +1,5 @@
+schema_version,record_kind,language,package_name,declaring_type,callable_kind,callable_name,erased_parameters,return_type,repository_path,source_path,start_line,start_column,end_line,end_column,caller_symbol_key,callee_symbol_key,dispatch_kind,relation_kind,candidate_count,expression_text,unresolved_reason
+1,definition,java,demo,demo.Service,method,entry,java.lang.String,void,frameworks/base,frameworks/base/Service.java,10,3,20,4,demo.Service#entry(java.lang.String),,,,0,entry,
+1,call,java,demo,demo.Service,method,entry,java.lang.String,void,frameworks/base,frameworks/base/Service.java,12,7,12,21,demo.Service#entry(java.lang.String),demo.First#run(java.lang.String),virtual,may,2,worker.run(value),
+1,call,java,demo,demo.Service,method,entry,java.lang.String,void,frameworks/base,frameworks/base/Service.java,12,7,12,21,demo.Service#entry(java.lang.String),demo.Second#run(java.lang.String),virtual,may,2,worker.run(value),
+1,call,kotlin,demo,demo.KService,method,entry,java.lang.String,void,packages/modules/Demo,packages/modules/Demo/KService.kt,8,5,8,19,demo.KService#entry(java.lang.String),,virtual,unresolved,0,missing.call(value),missing_dependency
