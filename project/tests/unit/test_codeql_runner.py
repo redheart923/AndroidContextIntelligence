@@ -91,6 +91,13 @@ class FakeCodeQL:
         self.commands.append(tuple(command))
         if command[1:3] == ["version", "--format=json"]:
             return subprocess.CompletedProcess(command, 0, '{"version":"2.26.3"}', "")
+        if command[1:3] == ["resolve", "languages"]:
+            return subprocess.CompletedProcess(
+                command,
+                0,
+                '{"java":{"extractorPack":"codeql/java-all"}}',
+                "",
+            )
         output = Path(command[command.index("--output") + 1])
         output.parent.mkdir(parents=True, exist_ok=True)
         if command[1:3] == ["query", "run"]:
@@ -145,6 +152,8 @@ def test_run_queries_writes_normalized_manifest_and_reuses_verified_cache(tmp_pa
     assert first.queries[0].row_count == 1
     assert first.queries[0].raw_sha256
     assert first.queries[0].normalized_sha256
+    assert first.codeql_version == "2.26.3"
+    assert first.extractor_version.startswith("resolve-languages:")
     assert (output / "query-run-manifest.json").is_file()
     assert (output / "normalized/CallSites.jsonl").is_file()
     assert sum(command[1:3] == ("query", "run") for command in fake.commands) == 1

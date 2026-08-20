@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -15,6 +16,7 @@ from workspace.codeql_database import (
     build_script_text,
     preparation_fingerprint,
     validate_database_manifest,
+    validate_manifest_self_consistency,
 )
 
 
@@ -55,7 +57,7 @@ def fixture_request(
 def fixture_manifest(request: PreparationRequest) -> CodeQLDatabaseManifest:
     cache_key = preparation_fingerprint(request)
     return CodeQLDatabaseManifest(
-        schema_version=1,
+        schema_version=2,
         status="verified",
         cache_key=cache_key,
         language="java-kotlin",
@@ -63,6 +65,8 @@ def fixture_manifest(request: PreparationRequest) -> CodeQLDatabaseManifest:
         product=request.product,
         variant=request.variant,
         build_targets=request.build_targets,
+        threads=request.threads,
+        ram_mb=request.ram_mb,
         codeql_version=request.codeql_version,
         extractor_version=request.extractor_version,
         database_fingerprint="2" * 64,
@@ -166,6 +170,54 @@ def test_manifest_json_round_trip_is_stable(tmp_path: Path) -> None:
     )
 
     assert restored == manifest
+
+
+def test_manifest_self_consistency_rejects_tampered_cache_key(
+    tmp_path: Path,
+) -> None:
+    request = fixture_request(tmp_path)
+    manifest = fixture_manifest(request)
+    database = tmp_path / manifest.cache_key / "database"
+    database.mkdir(parents=True)
+    marker = database / "codeql-database.yml"
+    marker.write_text("primaryLanguage: java-kotlin\n", encoding="utf-8")
+    marker_digest = hashlib.sha256(marker.read_bytes()).hexdigest()
+    manifest = replace(
+        manifest,
+        database_marker_sha256=marker_digest,
+        database_fingerprint=hashlib.sha256(
+            json.dumps(
+                {
+                    "cache_key": manifest.cache_key,
+                    "database_info": manifest.database_info,
+                    "database_marker_sha256": marker_digest,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest(),
+    )
+
+    with pytest.raises(CodeQLDatabaseError, match="cache_key"):
+        validate_manifest_self_consistency(
+            replace(manifest, cache_key="4" * 64),
+            database=database,
+        )
+
+
+def test_manifest_self_consistency_rejects_tampered_source_fingerprint(
+    tmp_path: Path,
+) -> None:
+    request = fixture_request(tmp_path)
+    manifest = fixture_manifest(request)
+    database = tmp_path / manifest.cache_key / "database"
+    database.mkdir(parents=True)
+
+    with pytest.raises(CodeQLDatabaseError, match="source_fingerprint"):
+        validate_manifest_self_consistency(
+            replace(manifest, source_fingerprint="4" * 64),
+            database=database,
+        )
 
 
 @pytest.mark.parametrize(

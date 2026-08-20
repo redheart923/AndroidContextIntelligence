@@ -2,12 +2,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
 
-from workspace.codeql_database import CodeQLDatabaseManifest, RepositoryIdentity
-from workspace.codeql_import import CodeQLImportError, _validate_database
+from workspace.codeql_database import (
+    CodeQLDatabaseManifest,
+    RepositoryIdentity,
+    manifest_preparation_fingerprint,
+)
+from workspace.codeql_import import (
+    CodeQLImportError,
+    _validate_database,
+    _validate_query_tool_identity,
+)
+from workspace.codeql_runner import QueryRunManifest
 
 
 def repository(path: str, digit: str) -> RepositoryIdentity:
@@ -27,29 +37,57 @@ def fixture(
     planned: tuple[RepositoryIdentity, ...],
     observed: tuple[RepositoryIdentity, ...],
 ) -> tuple[Path, Path]:
-    entry = tmp_path / "entry"
-    database = entry / "database"
-    database.mkdir(parents=True)
-    marker = database / "codeql-database.yml"
-    marker.write_text("primaryLanguage: java-kotlin\n", encoding="utf-8")
+    source_fingerprint = hashlib.sha256(
+        json.dumps(
+            [asdict(item) for item in sorted(observed, key=lambda item: item.path)],
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     manifest = CodeQLDatabaseManifest(
-        schema_version=1,
+        schema_version=2,
         status="verified",
-        cache_key="a" * 64,
+        cache_key="0" * 64,
         language="java-kotlin",
-        source_fingerprint="b" * 64,
+        source_fingerprint=source_fingerprint,
         product="aosp_cf_x86_64_phone",
         variant="userdebug",
         build_targets=("services", "SystemUI"),
+        threads=8,
+        ram_mb=24576,
         codeql_version="2.26.3",
         extractor_version="java-kotlin:fixture",
-        database_fingerprint="c" * 64,
-        database_marker_sha256=hashlib.sha256(marker.read_bytes()).hexdigest(),
+        database_fingerprint="0" * 64,
+        database_marker_sha256="0" * 64,
         observed_java_files=10,
         observed_kotlin_files=2,
         repositories=observed,
         created_at="2026-08-20T00:00:00+00:00",
         database_info={"languages": ["java-kotlin"]},
+    )
+    cache_key = manifest_preparation_fingerprint(manifest)
+    entry = tmp_path / cache_key
+    database = entry / "database"
+    database.mkdir(parents=True)
+    marker = database / "codeql-database.yml"
+    marker.write_text("primaryLanguage: java-kotlin\n", encoding="utf-8")
+    marker_digest = hashlib.sha256(marker.read_bytes()).hexdigest()
+    database_fingerprint = hashlib.sha256(
+        json.dumps(
+            {
+                "cache_key": cache_key,
+                "database_info": manifest.database_info,
+                "database_marker_sha256": marker_digest,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    manifest = replace(
+        manifest,
+        cache_key=cache_key,
+        database_marker_sha256=marker_digest,
+        database_fingerprint=database_fingerprint,
     )
     (entry / "manifest.json").write_text(
         json.dumps(manifest.to_dict()),
@@ -66,7 +104,9 @@ def fixture(
                         "enabled": True,
                         "status": "available",
                         "revision": item.revision,
+                        "revision_dirty": item.dirty,
                         "inventory_sha256": item.inventory_sha256,
+                        "inventory_file_count": item.file_count,
                     }
                     for item in planned
                 ]
@@ -110,3 +150,26 @@ def test_database_validation_accepts_exact_repository_identities(
     manifest = _validate_database(database, plan)
 
     assert manifest.repositories == (base,)
+
+
+def test_query_tool_identity_must_match_database_manifest(tmp_path: Path) -> None:
+    base = repository("frameworks/base", "1")
+    database, plan = fixture(tmp_path, planned=(base,), observed=(base,))
+    manifest = _validate_database(database, plan)
+    query_manifest = QueryRunManifest(
+        schema_version=1,
+        database_fingerprint=manifest.database_fingerprint,
+        pack_lock_sha256="f" * 64,
+        codeql_version=manifest.codeql_version,
+        extractor_version="resolve-languages:" + "e" * 64,
+        created_at="2026-08-20T00:00:00+00:00",
+        queries=(),
+    )
+
+    with pytest.raises(CodeQLImportError, match="tool identity mismatch"):
+        _validate_query_tool_identity(manifest, query_manifest)
+
+    _validate_query_tool_identity(
+        manifest,
+        replace(query_manifest, extractor_version=manifest.extractor_version),
+    )

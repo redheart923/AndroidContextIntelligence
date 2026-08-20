@@ -31,8 +31,17 @@ from collectors.codeql.model import (
     ProgramValueRecord,
     SourceSpan,
 )
-from workspace.codeql_database import CodeQLDatabaseError, load_database_manifest
-from workspace.codeql_runner import CodeQLRunnerError, run_queries
+from workspace.codeql_database import (
+    CodeQLDatabaseError,
+    RepositoryIdentity,
+    load_database_manifest,
+    validate_manifest_self_consistency,
+)
+from workspace.codeql_runner import (
+    CodeQLRunnerError,
+    QueryRunManifest,
+    run_queries,
+)
 
 
 class CodeQLImportError(RuntimeError):
@@ -187,21 +196,29 @@ def _validate_database(codeql_database: Path, plan_path: Path) -> Any:
     manifest = load_database_manifest(manifest_path)
     if manifest.status != "verified" or manifest.language != "java-kotlin":
         raise CodeQLImportError("CodeQL database manifest is not verified java-kotlin")
-    marker = codeql_database / "codeql-database.yml"
-    if not marker.is_file():
-        raise CodeQLImportError(f"CodeQL database marker is missing: {marker}")
-    if hashlib.sha256(marker.read_bytes()).hexdigest() != manifest.database_marker_sha256:
-        raise CodeQLImportError("CodeQL database marker digest mismatch")
+    try:
+        validate_manifest_self_consistency(manifest, database=codeql_database)
+    except CodeQLDatabaseError as error:
+        raise CodeQLImportError(str(error)) from error
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    planned = {
-        str(item["path"]): (str(item.get("revision", "")), str(item.get("inventory_sha256", "")))
-        for item in plan.get("repositories", [])
-        if item.get("enabled") and item.get("status") == "available"
-    }
-    observed = {
-        item.path: (item.revision, item.inventory_sha256)
-        for item in manifest.repositories
-    }
+    try:
+        planned = {
+            str(item["path"]): RepositoryIdentity(
+                name=str(item["name"]),
+                path=str(item["path"]),
+                revision=str(item["revision"]),
+                dirty=bool(item["revision_dirty"]),
+                inventory_sha256=str(item["inventory_sha256"]),
+                file_count=int(item["inventory_file_count"]),
+            )
+            for item in plan.get("repositories", [])
+            if item.get("enabled") and item.get("status") == "available"
+        }
+    except (KeyError, TypeError, ValueError, CodeQLDatabaseError) as error:
+        raise CodeQLImportError(
+            f"workspace plan repository identity is incomplete: {error}"
+        ) from error
+    observed = {item.path: item for item in manifest.repositories}
     if set(planned) != set(observed):
         raise CodeQLImportError(
             "CodeQL repository set mismatch: "
@@ -216,6 +233,19 @@ def _validate_database(codeql_database: Path, plan_path: Path) -> Any:
     if mismatches:
         raise CodeQLImportError(f"CodeQL source identity mismatch: {mismatches}")
     return manifest
+
+
+def _validate_query_tool_identity(
+    database_manifest: Any,
+    query_manifest: QueryRunManifest,
+) -> None:
+    mismatches = {
+        name: (getattr(database_manifest, name), getattr(query_manifest, name))
+        for name in ("codeql_version", "extractor_version")
+        if getattr(database_manifest, name) != getattr(query_manifest, name)
+    }
+    if mismatches:
+        raise CodeQLImportError(f"CodeQL query tool identity mismatch: {mismatches}")
 
 
 def _insert_run(database: Path, manifest: Any, query_manifest: Any) -> tuple[str, str]:
@@ -278,6 +308,7 @@ def import_codeql_facts(
         raise CodeQLImportError("forced CodeQL validation failure")
     manifest = _validate_database(codeql_database, plan)
     query_manifest = run_queries(codeql_database, pack, cache_dir, codeql_bin)
+    _validate_query_tool_identity(manifest, query_manifest)
     records = _load_records(tuple(Path(item.normalized_path) for item in query_manifest.queries))
     run_id, evidence_id = _insert_run(database, manifest, query_manifest)
     run = MaterializationRun(run_id, evidence_id, manifest.source_fingerprint)

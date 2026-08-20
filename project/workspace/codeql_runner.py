@@ -77,6 +77,7 @@ class QueryRunManifest:
     database_fingerprint: str
     pack_lock_sha256: str
     codeql_version: str
+    extractor_version: str
     created_at: str
     queries: tuple[QueryArtifact, ...]
 
@@ -153,13 +154,31 @@ def _valid_artifact(artifact: QueryArtifact, cache_key: str) -> bool:
     return True
 
 
-def _codeql_version(codeql_bin: Path, runner: Runner, cwd: Path) -> str:
+def _codeql_identity(
+    codeql_bin: Path, runner: Runner, cwd: Path
+) -> tuple[str, str]:
     result = _run(runner, [str(codeql_bin), "version", "--format=json"], cwd)
     try:
         value = json.loads(result.stdout)
-        return str(value["version"])
+        version = str(value["version"])
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise CodeQLRunnerError(f"invalid CodeQL version JSON: {error}") from error
+    languages = _run(
+        runner,
+        [str(codeql_bin), "resolve", "languages", "--format=json"],
+        cwd,
+    )
+    try:
+        parsed = json.loads(languages.stdout)
+    except json.JSONDecodeError as error:
+        raise CodeQLRunnerError(
+            f"invalid CodeQL extractor identity JSON: {error}"
+        ) from error
+    del parsed
+    extractor_version = "resolve-languages:" + _sha256_bytes(
+        languages.stdout.strip().encode("utf-8")
+    )
+    return version, extractor_version
 
 
 def _repository_paths(database: Path) -> tuple[str, ...]:
@@ -208,7 +227,7 @@ def run_queries(
         raise CodeQLRunnerError(f"CodeQL pack has no queries: {pack}")
     database_fingerprint = _database_fingerprint(database)
     lock_hash = _sha256_file(lock)
-    version = _codeql_version(codeql_bin, runner, pack)
+    version, extractor_version = _codeql_identity(codeql_bin, runner, pack)
     artifacts: list[QueryArtifact] = []
     for query in queries:
         query_id = query.stem
@@ -309,6 +328,7 @@ def run_queries(
     manifest = QueryRunManifest(
         schema_version=1, database_fingerprint=database_fingerprint,
         pack_lock_sha256=lock_hash, codeql_version=version,
+        extractor_version=extractor_version,
         created_at=datetime.now(timezone.utc).isoformat(), queries=tuple(artifacts),
     )
     _atomic_json(output_dir / "query-run-manifest.json", manifest.to_dict())

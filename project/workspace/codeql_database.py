@@ -131,6 +131,8 @@ class CodeQLDatabaseManifest:
     product: str
     variant: str
     build_targets: tuple[str, ...]
+    threads: int
+    ram_mb: int
     codeql_version: str
     extractor_version: str
     database_fingerprint: str
@@ -164,6 +166,8 @@ class CodeQLDatabaseManifest:
             product=str(value["product"]),
             variant=str(value["variant"]),
             build_targets=tuple(str(item) for item in value["build_targets"]),
+            threads=int(value["threads"]),
+            ram_mb=int(value["ram_mb"]),
             codeql_version=str(value["codeql_version"]),
             extractor_version=str(value["extractor_version"]),
             database_fingerprint=str(value["database_fingerprint"]),
@@ -195,6 +199,68 @@ def preparation_fingerprint(request: PreparationRequest) -> str:
         "extractor_version": request.extractor_version,
     }
     return _sha256_bytes(_canonical_bytes(payload))
+
+
+def manifest_preparation_fingerprint(manifest: CodeQLDatabaseManifest) -> str:
+    payload = {
+        "schema_version": 1,
+        "language": "java-kotlin",
+        "source_fingerprint": manifest.source_fingerprint,
+        "repositories": [
+            asdict(item) for item in _sorted_repositories(manifest.repositories)
+        ],
+        "product": manifest.product,
+        "variant": manifest.variant,
+        "build_targets": list(manifest.build_targets),
+        "threads": manifest.threads,
+        "ram_mb": manifest.ram_mb,
+        "codeql_version": manifest.codeql_version,
+        "extractor_version": manifest.extractor_version,
+    }
+    return _sha256_bytes(_canonical_bytes(payload))
+
+
+def validate_manifest_self_consistency(
+    manifest: CodeQLDatabaseManifest, *, database: Path
+) -> None:
+    if manifest.schema_version != 2:
+        raise CodeQLDatabaseError(
+            f"unsupported CodeQL manifest schema: {manifest.schema_version}"
+        )
+    if not manifest.product or not manifest.variant or not manifest.build_targets:
+        raise CodeQLDatabaseError("CodeQL manifest build identity is incomplete")
+    if manifest.threads < 1 or manifest.ram_mb < 1024:
+        raise CodeQLDatabaseError("CodeQL manifest resource identity is invalid")
+    repositories = [asdict(item) for item in _sorted_repositories(manifest.repositories)]
+    expected_source = _sha256_bytes(_canonical_bytes(repositories))
+    if manifest.source_fingerprint != expected_source:
+        raise CodeQLDatabaseError("CodeQL manifest source_fingerprint mismatch")
+    expected_cache = manifest_preparation_fingerprint(manifest)
+    if manifest.cache_key != expected_cache:
+        raise CodeQLDatabaseError("CodeQL manifest cache_key mismatch")
+    cache_directory = database.parent.name
+    if (
+        cache_directory != manifest.cache_key
+        and not cache_directory.startswith(f".{manifest.cache_key}.partial-")
+    ):
+        raise CodeQLDatabaseError("CodeQL database cache directory mismatch")
+    marker = database / "codeql-database.yml"
+    if not marker.is_file():
+        raise CodeQLDatabaseError(f"CodeQL database marker is missing: {marker}")
+    marker_digest = _sha256_bytes(marker.read_bytes())
+    if marker_digest != manifest.database_marker_sha256:
+        raise CodeQLDatabaseError("CodeQL database marker digest mismatch")
+    expected_database = _sha256_bytes(
+        _canonical_bytes(
+            {
+                "cache_key": manifest.cache_key,
+                "database_info": manifest.database_info,
+                "database_marker_sha256": marker_digest,
+            }
+        )
+    )
+    if manifest.database_fingerprint != expected_database:
+        raise CodeQLDatabaseError("CodeQL database_fingerprint mismatch")
 
 
 def build_script_text(request: PreparationRequest, cache_key: str) -> str:
@@ -257,7 +323,7 @@ def validate_database_manifest(
     database: Path | None = None,
 ) -> None:
     expected = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "verified",
         "language": "java-kotlin",
         "source_fingerprint": expected_request.source_fingerprint,
@@ -265,6 +331,8 @@ def validate_database_manifest(
         "product": expected_request.product,
         "variant": expected_request.variant,
         "build_targets": expected_request.build_targets,
+        "threads": expected_request.threads,
+        "ram_mb": expected_request.ram_mb,
         "codeql_version": expected_request.codeql_version,
         "extractor_version": expected_request.extractor_version,
         "repositories": _sorted_repositories(expected_request.repositories),
@@ -288,14 +356,7 @@ def validate_database_manifest(
     if manifest.observed_java_files < 0 or manifest.observed_kotlin_files < 0:
         raise CodeQLDatabaseError("observed source counts must not be negative")
     if database is not None:
-        marker = database / "codeql-database.yml"
-        if not marker.is_file():
-            raise CodeQLDatabaseError(f"CodeQL database marker is missing: {marker}")
-        current = _sha256_bytes(marker.read_bytes())
-        if current != manifest.database_marker_sha256:
-            raise CodeQLDatabaseError(
-                "CodeQL database marker digest mismatch"
-            )
+        validate_manifest_self_consistency(manifest, database=database)
 
 
 def _atomic_json(path: Path, value: object) -> None:
@@ -461,7 +522,7 @@ def prepare_database(
         )
         observed_java, observed_kotlin = _observed_source_counts(partial_database)
         manifest = CodeQLDatabaseManifest(
-            schema_version=1,
+            schema_version=2,
             status="verified",
             cache_key=cache_key,
             language="java-kotlin",
@@ -469,6 +530,8 @@ def prepare_database(
             product=request.product,
             variant=request.variant,
             build_targets=request.build_targets,
+            threads=request.threads,
+            ram_mb=request.ram_mb,
             codeql_version=request.codeql_version,
             extractor_version=request.extractor_version,
             database_fingerprint=database_fingerprint,
