@@ -8,6 +8,13 @@ REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
 VENDOR_INPUT="$PROJECT_ROOT/vendor-input"
 VENDOR_CACHE="$PROJECT_ROOT/.cache/vendor-artifacts"
 SERVICE_CACHE="$PROJECT_ROOT/.cache/service-registration"
+CODEQL_CACHE="$PROJECT_ROOT/.cache/codeql-results"
+CODEQL_DB=""
+CODEQL_BIN="${CODEQL_BIN:-codeql}"
+CORRECTIONS_DIR="$PROJECT_ROOT/config/corrections"
+RETAIN_HISTORY=0
+RETAIN_HISTORY_DATABASE=0
+CALL_DATAFLOW_STRICT=0
 JADX_BIN="${JADX_BIN:-jadx}"
 MODE="rebuild"
 KEEP_FAILED=0
@@ -28,6 +35,11 @@ Options:
   --vendor-input DIR          Read Vendor APK/JAR inputs outside data/.
   --vendor-cache DIR          Use a content-addressed decompilation cache.
   --jadx-bin FILE             Use a specific JADX executable.
+  --codeql-db DIR             Import a verified java-kotlin CodeQL database.
+  --codeql-bin FILE           Use a specific CodeQL executable.
+  --corrections-dir DIR       Replay approved Git-managed corrections.
+  --retain-history            Retain immutable reports for the verified build.
+  --retain-history-database   Also retain the verified SQLite database.
   --keep-failed-db            Retain the complete failed staging batch.
   -h, --help                  Show this help.
 EOF
@@ -61,13 +73,41 @@ while [[ $# -gt 0 ]]; do
         --strict)
             STRICT+=(--strict)
             PROVENANCE_STRICT+=(--require-complete)
+            CALL_DATAFLOW_STRICT=1
             shift
             ;;
         --strict-capability)
             [[ $# -ge 2 ]] || die "--strict-capability requires a name"
             STRICT+=(--strict-capability "$2")
             PROVENANCE_STRICT+=(--require-complete)
+            if [[ "$2" == "call_graph" || "$2" == "interprocedural_dataflow" ]]; then
+                CALL_DATAFLOW_STRICT=1
+            fi
             shift 2
+            ;;
+        --codeql-db)
+            [[ $# -ge 2 ]] || die "--codeql-db requires a path"
+            CODEQL_DB="$2"
+            shift 2
+            ;;
+        --codeql-bin)
+            [[ $# -ge 2 ]] || die "--codeql-bin requires a path"
+            CODEQL_BIN="$2"
+            shift 2
+            ;;
+        --corrections-dir)
+            [[ $# -ge 2 ]] || die "--corrections-dir requires a path"
+            CORRECTIONS_DIR="$2"
+            shift 2
+            ;;
+        --retain-history)
+            RETAIN_HISTORY=1
+            shift
+            ;;
+        --retain-history-database)
+            RETAIN_HISTORY=1
+            RETAIN_HISTORY_DATABASE=1
+            shift
             ;;
         --keep-failed-db)
             KEEP_FAILED=1
@@ -220,6 +260,45 @@ python -m workspace.pipeline annotate \
     --plan "$PLAN" \
     --db "$STAGED_DB"
 
+CODEQL_REPORT="$STAGED_RAW/codeql/call-dataflow-report.json"
+CORRECTION_REPORT="$STAGED_WORKSPACE/correction-application-report.json"
+CALL_DATAFLOW_REPORT="$STAGED_WORKSPACE/call-dataflow-validation.json"
+
+if [[ -z "$CODEQL_DB" ]]; then
+    python -m workspace.codeql_import \
+        --skip \
+        --report "$CODEQL_REPORT" \
+        --correction-report "$CORRECTION_REPORT"
+    [[ "$CALL_DATAFLOW_STRICT" -eq 0 ]] || \
+        die "strict call/dataflow capability requires --codeql-db"
+else
+    [[ -d "$CODEQL_DB" ]] || die "CodeQL database is not a directory: $CODEQL_DB"
+    if [[ "$CODEQL_BIN" != */* ]]; then
+        CODEQL_BIN="$(command -v "$CODEQL_BIN" || true)"
+    fi
+    [[ -x "$CODEQL_BIN" ]] || die "CodeQL executable is unavailable: $CODEQL_BIN"
+    python -m workspace.codeql_import \
+        --db "$STAGED_DB" \
+        --codeql-db "$CODEQL_DB" \
+        --codeql-bin "$CODEQL_BIN" \
+        --pack "$PROJECT_ROOT/codeql" \
+        --cache-dir "$CODEQL_CACHE" \
+        --plan "$PLAN" \
+        --corrections-dir "$CORRECTIONS_DIR" \
+        --report "$CODEQL_REPORT" \
+        --correction-report "$CORRECTION_REPORT"
+fi
+
+CALL_DATAFLOW_VALIDATION_ARGS=()
+if [[ "$CALL_DATAFLOW_STRICT" -eq 1 ]]; then
+    CALL_DATAFLOW_VALIDATION_ARGS+=(--require-aosp-evidence)
+fi
+python -m workspace.call_dataflow_validation \
+    --db "$STAGED_DB" \
+    --config "$PROJECT_ROOT/config/codeql.toml" \
+    --report "$CALL_DATAFLOW_REPORT" \
+    "${CALL_DATAFLOW_VALIDATION_ARGS[@]}"
+
 python -m workspace.symbol_collision_validation \
     --db "$STAGED_DB" \
     --plan "$PLAN" \
@@ -230,12 +309,20 @@ python -m workspace.coverage_validation \
     --db "$STAGED_DB" \
     --report "$STAGED_WORKSPACE/capability-report.json"
 
+python "$PROJECT_ROOT/scripts/graph_fingerprint.py" \
+    --db "$STAGED_DB" \
+    --format json \
+    > "$STAGED_WORKSPACE/semantic-fingerprints.json"
+
 python -m workspace.provenance collect \
     --plan "$PLAN" \
     --source-config "$SOURCE_CONFIG" \
     --local-config "$LOCAL_CONFIG" \
     --registry "$REGISTRY" \
     --vendor-manifest "$VENDOR_MANIFEST" \
+    --codeql-report "$CODEQL_REPORT" \
+    --correction-report "$CORRECTION_REPORT" \
+    --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
     --output "$STAGED_WORKSPACE/provenance.json"
 
 python -m workspace.provenance validate \
@@ -263,6 +350,13 @@ LOCAL_SERVICE_COUNT="$(
         < "$PROJECT_ROOT/queries/pms_service_chain.sql"
 
 VERIFIED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+HISTORY_ARGS=()
+if [[ "$RETAIN_HISTORY" -eq 1 ]]; then
+    HISTORY_ARGS+=(--retain-history)
+fi
+if [[ "$RETAIN_HISTORY_DATABASE" -eq 1 ]]; then
+    HISTORY_ARGS+=(--retain-history-database)
+fi
 python -m workspace.build_publish prepare \
     --staging "$STAGING" \
     --source-config "$SOURCE_CONFIG" \
@@ -270,7 +364,8 @@ python -m workspace.build_publish prepare \
     --provenance "$STAGED_WORKSPACE/provenance.json" \
     --vendor-manifest "$VENDOR_MANIFEST" \
     --started-at "$STARTED_AT" \
-    --verified-at "$VERIFIED_AT"
+    --verified-at "$VERIFIED_AT" \
+    "${HISTORY_ARGS[@]}"
 
 python -m workspace.build_publish publish \
     --staging "$STAGING"

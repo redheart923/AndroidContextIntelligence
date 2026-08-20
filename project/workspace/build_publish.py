@@ -23,6 +23,7 @@ RAW_REPORT_DIRECTORIES = (
     "service",
     "permission",
     "vendor",
+    "codeql",
 )
 
 
@@ -100,6 +101,57 @@ def cleanup_failed_build(batch: BuildBatch, keep: bool) -> Path | None:
     if batch.staging_root.exists():
         shutil.rmtree(batch.staging_root)
     return None
+
+
+def retain_build_history(
+    batch: BuildBatch,
+    *,
+    include_database: bool,
+) -> Path:
+    identity = _read_verified_manifest_build_id(batch)
+    if identity != batch.build_id:
+        raise PublicationError(
+            "cannot retain history before the build manifest is verified"
+        )
+    history = batch.data_root / "history" / batch.build_id
+    history.mkdir(parents=True, exist_ok=False)
+    try:
+        shutil.copytree(batch.workspace, history / "workspace")
+        codeql = batch.raw / "codeql"
+        if codeql.is_dir():
+            shutil.copytree(codeql, history / "raw/codeql")
+        if include_database:
+            shutil.copy2(batch.database, history / "android_context.db")
+        manifest = history / "history-manifest.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "build_id": batch.build_id,
+                    "database_retained": include_database,
+                    "workspace_files": sorted(
+                        path.relative_to(history).as_posix()
+                        for path in (history / "workspace").rglob("*")
+                        if path.is_file()
+                    ),
+                    "codeql_files": sorted(
+                        path.relative_to(history).as_posix()
+                        for path in (history / "raw/codeql").rglob("*")
+                        if path.is_file()
+                    )
+                    if (history / "raw/codeql").is_dir()
+                    else [],
+                },
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    except BaseException:
+        shutil.rmtree(history, ignore_errors=True)
+        raise
+    return history
 
 
 def record_graph_build(
@@ -514,6 +566,8 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--vendor-manifest", type=Path)
     prepare.add_argument("--started-at", required=True)
     prepare.add_argument("--verified-at", required=True)
+    prepare.add_argument("--retain-history", action="store_true")
+    prepare.add_argument("--retain-history-database", action="store_true")
 
     publish = commands.add_parser("publish", help="publish a verified batch")
     publish.add_argument("--staging", type=Path, required=True)
@@ -553,6 +607,11 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.vendor_manifest,
         )
         prepare_staged_database(batch.database)
+        if arguments.retain_history or arguments.retain_history_database:
+            retain_build_history(
+                batch,
+                include_database=arguments.retain_history_database,
+            )
         return 0
     if arguments.command == "publish":
         publish_build(load_build_batch(arguments.staging))

@@ -138,3 +138,60 @@ def test_collect_records_repository_config_and_tool_identities(
         ]
     ) == 0
     assert output.is_file()
+
+
+def test_collect_includes_codeql_corrections_and_semantic_fingerprints(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "aosp/frameworks/base"
+    repository.mkdir(parents=True)
+    (repository / "Source.java").write_text("class Source {}\n", encoding="utf-8")
+    source = tmp_path / "source.toml"
+    source.write_text("[workspace]\n", encoding="utf-8")
+    registry = tmp_path / "registry.toml"
+    registry.write_text("[parsers]\n", encoding="utf-8")
+    inventory = __import__(
+        "workspace.revisions", fromlist=["inspect_repository_provenance"]
+    ).inspect_repository_provenance(repository)
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "aosp_root": str(tmp_path / "aosp"),
+                "default_exclude": [],
+                "repositories": [
+                    {
+                        "name": "frameworks/base",
+                        "path": "frameworks/base",
+                        "enabled": True,
+                        "include": [],
+                        "exclude": [],
+                        "languages": ["java"],
+                        "revision": inventory.revision,
+                        "inventory_sha256": inventory.inventory_sha256,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    codeql = tmp_path / "codeql.json"
+    codeql.write_text(json.dumps({"status": "complete", "run_id": "run-1"}), encoding="utf-8")
+    corrections = tmp_path / "corrections.json"
+    corrections.write_text(json.dumps({"applications": []}), encoding="utf-8")
+    fingerprints = tmp_path / "fingerprints.json"
+    fingerprints.write_text(json.dumps({"whole_graph": "a" * 64}), encoding="utf-8")
+
+    payload = collect_provenance(
+        plan,
+        source,
+        registry,
+        codeql_report=codeql,
+        correction_report=corrections,
+        fingerprints=fingerprints,
+    )
+
+    semantic = payload["semantic_pipeline"]
+    assert semantic["codeql_report"]["sha256"]
+    assert semantic["correction_report"]["sha256"]
+    assert semantic["fingerprints"]["sha256"]

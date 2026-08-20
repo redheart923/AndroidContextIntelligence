@@ -20,6 +20,7 @@ from workspace.build_publish import (
     publish_build,
     read_graph_build_id,
     record_graph_build,
+    retain_build_history,
     recover_publication,
     write_build_manifest,
 )
@@ -106,6 +107,39 @@ def test_keep_failed_build_preserves_complete_batch(tmp_path: Path) -> None:
     assert retained == batch.staging_root.resolve()
     assert batch.database.read_bytes() == b"partial"
     assert (batch.workspace / "report.json").read_text(encoding="utf-8") == "{}"
+
+
+def test_retain_history_copies_verified_reports_and_optionally_database(
+    tmp_path: Path,
+) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    batch.database.write_bytes(b"verified-db")
+    (batch.workspace / "build-manifest.json").write_text(
+        json.dumps({"build_id": "build-1", "status": "verified"}),
+        encoding="utf-8",
+    )
+    (batch.workspace / "semantic-fingerprints.json").write_text(
+        json.dumps({"whole_graph": "a" * 64}), encoding="utf-8"
+    )
+    (batch.raw / "codeql/call-dataflow-report.json").write_text(
+        json.dumps({"status": "complete"}), encoding="utf-8"
+    )
+
+    history = retain_build_history(batch, include_database=False)
+
+    assert history == tmp_path / "history/build-1"
+    assert (history / "workspace/build-manifest.json").is_file()
+    assert (history / "raw/codeql/call-dataflow-report.json").is_file()
+    assert not (history / "android_context.db").exists()
+
+    second = begin_build(tmp_path, build_id="build-2")
+    second.database.write_bytes(b"verified-db-2")
+    (second.workspace / "build-manifest.json").write_text(
+        json.dumps({"build_id": "build-2", "status": "verified"}),
+        encoding="utf-8",
+    )
+    retained = retain_build_history(second, include_database=True)
+    assert (retained / "android_context.db").read_bytes() == b"verified-db-2"
 
 
 def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> None:

@@ -87,6 +87,9 @@ def collect_provenance(
     parser_registry: Path,
     local_config: Path | None = None,
     vendor_manifest: Path | None = None,
+    codeql_report: Path | None = None,
+    correction_report: Path | None = None,
+    fingerprints: Path | None = None,
 ) -> dict[str, object]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     aosp_root = Path(str(plan["aosp_root"]))
@@ -142,6 +145,11 @@ def collect_provenance(
             "jadx": _command_identity("jadx", ("--version",), optional=True),
         },
         "vendor_artifacts": _file_identity(vendor_manifest),
+        "semantic_pipeline": {
+            "codeql_report": _file_identity(codeql_report),
+            "correction_report": _file_identity(correction_report),
+            "fingerprints": _file_identity(fingerprints),
+        },
     }
     payload["fingerprint"] = provenance_fingerprint(payload)
     return payload
@@ -209,6 +217,9 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--registry", type=Path, required=True)
     collect.add_argument("--output", type=Path, required=True)
     collect.add_argument("--vendor-manifest", type=Path)
+    collect.add_argument("--codeql-report", type=Path)
+    collect.add_argument("--correction-report", type=Path)
+    collect.add_argument("--fingerprints", type=Path)
     validate = commands.add_parser("validate")
     validate.add_argument("--provenance", type=Path, required=True)
     validate.add_argument("--require-complete", action="store_true")
@@ -224,6 +235,9 @@ def main(arguments: list[str] | None = None) -> int:
             parsed.registry,
             parsed.local_config,
             parsed.vendor_manifest,
+            parsed.codeql_report,
+            parsed.correction_report,
+            parsed.fingerprints,
         )
         parsed.output.parent.mkdir(parents=True, exist_ok=True)
         parsed.output.write_text(

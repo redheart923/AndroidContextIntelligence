@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+import json
 import sqlite3
 import tomllib
 from dataclasses import dataclass
@@ -263,3 +265,46 @@ def validate_call_dataflow(
         if stale_count:
             warnings.append(f"stale corrections: {stale_count}")
         return ValidationReport(metrics, tuple(warnings), evidence)
+
+
+def main(arguments: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Validate call/dataflow semantic facts")
+    parser.add_argument("--db", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--require-aosp-evidence", action="store_true")
+    args = parser.parse_args(arguments)
+    try:
+        report = validate_call_dataflow(
+            args.db,
+            require_aosp_evidence=args.require_aosp_evidence,
+            config_path=args.config,
+        )
+    except CallDataflowValidationError as error:
+        print(f"ERROR: {error}")
+        return 1
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(
+        json.dumps(
+            {
+                "metrics": report.metrics,
+                "warnings": list(report.warnings),
+                "strong_evidence": report.strong_evidence,
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(
+        "call_dataflow_validation: PASS; "
+        f"call_sites={report.metrics['call_sites']}; "
+        f"paths={report.metrics['dataflow_paths']}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

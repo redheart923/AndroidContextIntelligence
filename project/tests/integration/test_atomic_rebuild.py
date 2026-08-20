@@ -120,6 +120,30 @@ args.out_dir.mkdir(parents=True, exist_ok=True)
             "aosp_root": ".",
             "default_exclude": [],
             "repositories": [],
+            "tasks": [
+                {
+                    "repository": "fixture",
+                    "repository_path": ".",
+                    "language": "java",
+                    "capability": "call_graph",
+                    "parser": "codeql_java_kotlin_importer",
+                    "status": "scheduled",
+                    "quality": "semantic",
+                    "files": 1,
+                    "expected_evidence": ["typed_table:call_site"],
+                },
+                {
+                    "repository": "fixture",
+                    "repository_path": ".",
+                    "language": "java",
+                    "capability": "interprocedural_dataflow",
+                    "parser": "codeql_java_kotlin_importer",
+                    "status": "scheduled",
+                    "quality": "semantic",
+                    "files": 1,
+                    "expected_evidence": ["typed_table:dataflow_path"],
+                },
+            ],
         }
     ) + "\n",
     encoding="utf-8",
@@ -282,6 +306,10 @@ def project(tmp_path: Path) -> Path:
     shutil.copytree(SNAPSHOT_ROOT / "collectors", root / "collectors")
     (root / "scripts").mkdir()
     shutil.copy2(CANONICAL_SCRIPT, root / "scripts" / "rebuild_all.sh")
+    shutil.copy2(
+        SNAPSHOT_ROOT / "scripts/graph_fingerprint.py",
+        root / "scripts/graph_fingerprint.py",
+    )
     _write(root / ".venv/bin/activate", "")
     _write(root / "storage/schema.sql", SCHEMA)
     shutil.copytree(

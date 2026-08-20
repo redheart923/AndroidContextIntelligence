@@ -29,6 +29,8 @@ ORDER BY edge_id
 
 SEMANTIC_GROUPS = {
     "call_graph": (
+        "extraction_run",
+        "extraction_evidence",
         "semantic_definition",
         "call_site",
         "call_target",
@@ -152,9 +154,14 @@ def main(arguments: list[str] | None = None) -> int:
         )
     )
     parser.add_argument("--db", type=Path, required=True)
+    parser.add_argument("--format", choices=("text", "json"), default="text")
     parsed = parser.parse_args(arguments)
-    for name, digest in graph_semantic_fingerprints(parsed.db).items():
-        print(f"{name}={digest}")
+    fingerprints = graph_semantic_fingerprints(parsed.db)
+    if parsed.format == "json":
+        print(json.dumps(fingerprints, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        for name, digest in fingerprints.items():
+            print(f"{name}={digest}")
     return 0
 
 
