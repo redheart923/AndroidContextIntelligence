@@ -17,6 +17,7 @@ from workspace.schema_migrations import apply_migrations
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SOURCE = "frameworks/base/demo/SecurityService.java"
 OWNER_KEY = "demo.SecurityService#entry(java.lang.String)"
+HELPER_KEY = "demo.SecurityService#write(java.lang.String)"
 
 
 def graph_db(tmp_path: Path) -> Path:
@@ -137,6 +138,56 @@ def test_path_preserves_program_values_and_ordered_steps(tmp_path: Path) -> None
     assert edge_count(database, "FLOW_SOURCE") == 1
     assert edge_count(database, "FLOW_SINK") == 1
     assert violations == []
+
+
+def test_interprocedural_path_uses_sink_owner_for_security_trace(
+    tmp_path: Path,
+) -> None:
+    database = graph_db(tmp_path)
+    with sqlite3.connect(database) as connection:
+        seed_node(connection, "JAVA_METHOD:helper", "JAVA_METHOD", HELPER_KEY, 30)
+        seed_node(
+            connection,
+            "SEMANTIC_DEFINITION:helper",
+            "SEMANTIC_DEFINITION",
+            HELPER_KEY,
+            30,
+        )
+        connection.execute(
+            """
+            INSERT INTO semantic_definition VALUES(
+              'SEMANTIC_DEFINITION:helper','run-1','JAVA_METHOD:helper',?,'java','method',
+              'frameworks/base',?,30,1,40,1,'unique',?,'{}'
+            )
+            """,
+            (HELPER_KEY, SOURCE, "i" * 64),
+        )
+        connection.execute(
+            "UPDATE call_site SET caller_method_id='JAVA_METHOD:helper' "
+            "WHERE call_site_id='CALL_SITE:sink'"
+        )
+    path = DataflowPathRecord(
+        "binder_argument_to_sensitive_sink",
+        OWNER_KEY,
+        HELPER_KEY,
+        (
+            ProgramValueRecord(
+                "value", OWNER_KEY, "parameter", 0, span(10), parameter_index=0
+            ),
+            ProgramValueRecord("sink", HELPER_KEY, "expression", 1, span(15)),
+        ),
+        "SystemServiceDataflow",
+        "1",
+        "d" * 64,
+    )
+
+    report = materialize_security_facts(database, (path,), run_context())
+
+    assert report.security_traces == 1
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT sink_call_site_id FROM security_trace"
+        ).fetchone()[0] == "CALL_SITE:sink"
 
 
 def test_guard_is_not_materialized_as_dataflow(tmp_path: Path) -> None:

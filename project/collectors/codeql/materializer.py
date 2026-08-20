@@ -541,7 +541,7 @@ def _materialize_path(
     connection: sqlite3.Connection,
     path: DataflowPathRecord,
     run: MaterializationRun,
-) -> tuple[str, str, str, str] | None:
+) -> tuple[str, str, str, str, int] | None:
     entry_method_id = _logical_method_id(connection, path.entry_symbol_key)
     if entry_method_id is None:
         return None
@@ -554,6 +554,9 @@ def _materialize_path(
     path_id = "DATAFLOW_PATH:" + _digest(path.content_hash, run.evidence_id)
     first = path.steps[0]
     last = path.steps[-1]
+    sink_method_id = _logical_method_id(connection, last.symbol_key)
+    if sink_method_id is None:
+        return None
     properties = {
         "database_fingerprint": path.database_fingerprint,
         "entry_symbol_key": path.entry_symbol_key,
@@ -616,7 +619,13 @@ def _materialize_path(
         source_path=last.span.source_path, line_start=last.span.start_line,
         line_end=last.span.end_line, source_revision=run.source_revision,
     )
-    return path_id, entry_method_id, last.span.source_path, str(last.span.start_line)
+    return (
+        path_id,
+        entry_method_id,
+        sink_method_id,
+        last.span.source_path,
+        last.span.start_line,
+    )
 
 
 def _insert_trace_step(
@@ -669,10 +678,9 @@ def materialize_security_facts(
             materialized = _materialize_path(connection, path, run)
             if materialized is None:
                 continue
-            path_id, entry_method_id, source_path, sink_line_text = materialized
-            sink_line = int(sink_line_text)
+            path_id, entry_method_id, sink_method_id, source_path, sink_line = materialized
             sink_call_site_id = _call_site_at(
-                connection, owner_method_id=entry_method_id,
+                connection, owner_method_id=sink_method_id,
                 source_path=source_path, line=sink_line,
             )
             value_count += len(path.steps)
@@ -692,10 +700,10 @@ def materialize_security_facts(
             matching_guards: list[tuple[GuardRecord, str]] = []
             for guard in guards:
                 owner = _logical_method_id(connection, guard.owner_symbol_key)
-                if owner != entry_method_id or guard.source_path != source_path:
+                if owner != sink_method_id or guard.source_path != source_path:
                     continue
                 guard_site = _call_site_at(
-                    connection, owner_method_id=entry_method_id,
+                    connection, owner_method_id=sink_method_id,
                     source_path=source_path, line=guard.guard_line,
                 )
                 if guard_site is not None and guard.sink_line == sink_line:
@@ -703,15 +711,15 @@ def materialize_security_facts(
             matching_identities: list[tuple[IdentityTransitionRecord, str, str | None]] = []
             for identity in identities:
                 owner = _logical_method_id(connection, identity.owner_symbol_key)
-                if owner != entry_method_id or identity.source_path != source_path:
+                if owner != sink_method_id or identity.source_path != source_path:
                     continue
                 clear_site = _call_site_at(
-                    connection, owner_method_id=entry_method_id,
+                    connection, owner_method_id=sink_method_id,
                     source_path=source_path, line=identity.clear_line,
                 )
                 restore_site = (
                     _call_site_at(
-                        connection, owner_method_id=entry_method_id,
+                        connection, owner_method_id=sink_method_id,
                         source_path=source_path, line=identity.restore_line,
                     )
                     if identity.restore_line is not None else None
