@@ -12,6 +12,15 @@ class RuntimeCoverageError(RuntimeError):
     pass
 
 
+TYPED_EVIDENCE_TABLES = {
+    "semantic_definition",
+    "call_site",
+    "call_target",
+    "dataflow_path",
+    "security_trace",
+}
+
+
 def _atomic_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary = tempfile.mkstemp(prefix=path.name, dir=path.parent)
@@ -74,6 +83,17 @@ def _evidence_count(
         if kind == "edge_type":
             query += suffix_sql
             args = (*args, *suffix_args)
+    elif kind == "typed_table":
+        if value not in TYPED_EVIDENCE_TABLES:
+            raise RuntimeCoverageError(
+                f"unsupported typed evidence table: {value}"
+            )
+        query = (
+            f'SELECT COUNT(*) FROM "{value}" WHERE repository=? AND '
+            + source_sql
+            + suffix_sql
+        )
+        args = (repository_path, *source_args, *suffix_args)
     else:
         raise RuntimeCoverageError(f"unsupported evidence contract: {evidence}")
     return int(connection.execute(query, args).fetchone()[0])

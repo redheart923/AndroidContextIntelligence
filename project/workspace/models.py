@@ -97,6 +97,15 @@ class ParserSpec:
     capabilities: tuple[str, ...]
     capability_quality: tuple[tuple[str, str], ...] = ()
     capability_evidence: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    capability_implementations: tuple[tuple[str, str], ...] = ()
+
+    def implementation_for(self, capability: str) -> str | None:
+        if not self.enabled or capability not in self.capabilities:
+            return None
+        return dict(self.capability_implementations).get(
+            capability,
+            self.implementation or None,
+        )
 
     def quality_for(self, capability: str) -> str | None:
         if capability not in self.capabilities:

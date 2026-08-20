@@ -15,7 +15,7 @@ BUILTINS = {
 class ParserRegistry(dict[str, ParserSpec]):
     def parser_for(self, language: str, capability: str) -> ParserSpec | None:
         value = self.get(language)
-        if not value or not value.enabled or not value.implementation or capability not in value.capabilities:
+        if not value or value.implementation_for(capability) is None:
             return None
         return value
 
@@ -64,11 +64,37 @@ def load_parser_registry(path: Path) -> ParserRegistry:
                 f"invalid capability evidence for {language}: "
                 + ", ".join(invalid_evidence)
             )
+        implementations = item.get("capability_implementations", {})
+        if not isinstance(implementations, dict):
+            raise ValueError(
+                f"invalid capability implementations for {language}"
+            )
+        unknown_implementations = sorted(
+            set(implementations) - set(capabilities)
+        )
+        invalid_implementations = sorted(
+            key
+            for key, value in implementations.items()
+            if not isinstance(value, str) or not value
+        )
+        if unknown_implementations:
+            raise ValueError(
+                f"implementation declared for unsupported capability in "
+                f"{language}: " + ", ".join(unknown_implementations)
+            )
+        if invalid_implementations:
+            raise ValueError(
+                f"invalid capability implementation for {language}: "
+                + ", ".join(invalid_implementations)
+            )
         result[language] = ParserSpec(language=language,
             implementation=str(item.get("implementation", "")),
             enabled=bool(item.get("enabled", False)), capabilities=tuple(capabilities),
             capability_quality=tuple(sorted(quality.items())),
             capability_evidence=tuple(
                 sorted((key, tuple(value)) for key, value in evidence.items())
+            ),
+            capability_implementations=tuple(
+                sorted(implementations.items())
             ))
     return result

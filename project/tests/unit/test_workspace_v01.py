@@ -173,6 +173,39 @@ symbols = ["node_type_prefix:JAVA_"]
     assert parser.evidence_for("symbols") == ("node_type_prefix:JAVA_",)
 
 
+def test_capability_specific_implementation_overrides_default(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "registry.toml"
+    path.write_text(
+        """
+[parsers.java]
+implementation = "java_symbol_importer"
+enabled = true
+capabilities = ["symbols", "call_graph"]
+
+[parsers.java.capability_implementations]
+call_graph = "codeql_java_kotlin_importer"
+
+[parsers.java.capability_quality]
+symbols = "tags_only"
+call_graph = "semantic"
+
+[parsers.java.capability_evidence]
+symbols = ["node_type_prefix:JAVA_"]
+call_graph = ["typed_table:call_site"]
+""",
+        encoding="utf-8",
+    )
+
+    parser = load_parser_registry(path)["java"]
+
+    assert parser.implementation_for("symbols") == "java_symbol_importer"
+    assert parser.implementation_for("call_graph") == (
+        "codeql_java_kotlin_importer"
+    )
+
+
 def test_canonical_kotlin_capabilities_do_not_claim_inheritance() -> None:
     project_root = Path(__file__).resolve().parents[2]
     registry = load_parser_registry(project_root / "config/parser_registry.toml")

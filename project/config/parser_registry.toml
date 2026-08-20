@@ -1,17 +1,24 @@
 [parsers.java]
 implementation = "java_symbol_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics"]
+capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"]
+[parsers.java.capability_implementations]
+call_graph = "codeql_java_kotlin_importer"
+interprocedural_dataflow = "codeql_java_kotlin_importer"
 [parsers.java.capability_quality]
 symbols = "tags_only"
 inheritance = "heuristic"
 service_registration = "heuristic"
 permission_semantics = "heuristic"
+call_graph = "semantic"
+interprocedural_dataflow = "semantic"
 [parsers.java.capability_evidence]
 symbols = ["node_type_prefix:JAVA_"]
 inheritance = ["edge_type:EXTENDS", "edge_type:IMPLEMENTS_JAVA_INTERFACE"]
 service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_SERVICE"]
 permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
+call_graph = ["typed_table:call_site"]
+interprocedural_dataflow = ["typed_table:dataflow_path"]
 
 [parsers.aidl]
 implementation = "aidl_binder_importer"
@@ -27,15 +34,22 @@ binder = ["edge_type_any_source:IMPLEMENTS_BINDER"]
 [parsers.kotlin]
 implementation = "kotlin_ctags_importer"
 enabled = true
-capabilities = ["symbols", "service_registration", "permission_semantics"]
+capabilities = ["symbols", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"]
+[parsers.kotlin.capability_implementations]
+call_graph = "codeql_java_kotlin_importer"
+interprocedural_dataflow = "codeql_java_kotlin_importer"
 [parsers.kotlin.capability_quality]
 symbols = "tags_only"
 service_registration = "heuristic"
 permission_semantics = "heuristic"
+call_graph = "semantic"
+interprocedural_dataflow = "semantic"
 [parsers.kotlin.capability_evidence]
 symbols = ["node_type_prefix:KOTLIN_"]
 service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_SERVICE"]
 permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
+call_graph = ["typed_table:call_site"]
+interprocedural_dataflow = ["typed_table:dataflow_path"]
 
 [parsers.c]
 implementation = ""

@@ -149,3 +149,48 @@ def test_evidence_from_another_language_does_not_satisfy_task(tmp_path: Path) ->
 
     assert report[0]["status"] == "degraded"
     assert report[0]["observed_count"] == 0
+
+
+def test_typed_table_evidence_is_scoped_by_repository_and_language(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "graph.db"
+    _database(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE call_site(
+              call_site_id TEXT PRIMARY KEY,
+              repository TEXT,
+              source_path TEXT
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO call_site VALUES (
+              'CALL_SITE:1',
+              'frameworks/base',
+              'frameworks/base/packages/SystemUI/src/demo/Example.kt'
+            )
+            """
+        )
+    plan = _plan()
+    plan["tasks"] = [
+        {
+            "repository": "frameworks/base",
+            "repository_path": "frameworks/base",
+            "language": "kotlin",
+            "capability": "call_graph",
+            "parser": "codeql_java_kotlin_importer",
+            "status": "scheduled",
+            "files": 1,
+            "quality": "semantic",
+            "expected_evidence": ["typed_table:call_site"],
+        }
+    ]
+
+    report = evaluate_runtime_coverage(plan, database)
+
+    assert report[0]["status"] == "supported"
+    assert report[0]["observed_count"] == 1

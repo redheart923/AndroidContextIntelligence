@@ -8,8 +8,8 @@ from .models import LanguageInventory, PlanTask, RepositorySpec, WorkspacePlan
 from .registry import load_parser_registry
 from .revisions import inspect_repository_provenance
 
-CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics"),
-                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics"),
+CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"),
+                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"),
                 "xml": ("permission_semantics",),
                 "c": ("symbols", "native_binder"), "cpp": ("symbols", "native_binder"),
                 "rust": ("symbols", "native_binder"), "hidl": ("symbols", "binder"),
@@ -76,7 +76,8 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
                 parser = registry.parser_for(language, capability)
                 status = "scheduled" if parser else "unsupported"
                 task = PlanTask(repo.name, repo.path, language, capability,
-                    parser.implementation if parser else None, status, count,
+                    parser.implementation_for(capability) if parser else None,
+                    status, count,
                     parser.quality_for(capability) if parser else None,
                     parser.evidence_for(capability) if parser else ())
                 tasks.append(task)
