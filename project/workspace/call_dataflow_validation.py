@@ -198,6 +198,102 @@ def _correction_gaps(connection: sqlite3.Connection) -> tuple[tuple[str, str], .
     )
 
 
+def _call_evidence_count(
+    connection: sqlite3.Connection, evidence: dict[str, Any]
+) -> int:
+    required = (
+        "caller_symbol_key",
+        "callee_symbol_key",
+        "relation_kind",
+        "source_path",
+    )
+    missing = [key for key in required if not evidence.get(key)]
+    if missing:
+        raise CallDataflowValidationError(
+            f"strong evidence {evidence.get('id', '<unknown>')} missing fields: {missing}"
+        )
+    if evidence["relation_kind"] not in {"must", "may"}:
+        raise CallDataflowValidationError(
+            f"strong evidence {evidence.get('id', '<unknown>')} has invalid relation_kind"
+        )
+    return _scalar(
+        connection,
+        """
+        SELECT COUNT(DISTINCT cs.call_site_id)
+        FROM call_site cs
+        JOIN call_target ct ON ct.call_site_id=cs.call_site_id
+        JOIN semantic_definition caller
+          ON caller.logical_method_id=cs.caller_method_id
+         AND caller.resolution_status='unique'
+        JOIN semantic_definition callee
+          ON callee.logical_method_id=ct.callee_method_id
+         AND callee.resolution_status='unique'
+        WHERE caller.semantic_symbol_key=?
+          AND callee.semantic_symbol_key=?
+          AND ct.relation_kind=?
+          AND cs.source_path=?
+        """,
+        (
+            str(evidence["caller_symbol_key"]),
+            str(evidence["callee_symbol_key"]),
+            str(evidence["relation_kind"]),
+            str(evidence["source_path"]),
+        ),
+    )
+
+
+def _security_trace_evidence_count(
+    connection: sqlite3.Connection, evidence: dict[str, Any]
+) -> int:
+    required = ("entry_symbol_key", "scenario_id", "status", "source_path")
+    missing = [key for key in required if not evidence.get(key)]
+    if missing:
+        raise CallDataflowValidationError(
+            f"strong evidence {evidence.get('id', '<unknown>')} missing fields: {missing}"
+        )
+    trace_ids = [
+        str(row[0])
+        for row in connection.execute(
+            """
+            SELECT DISTINCT trace.trace_id
+            FROM security_trace trace
+            JOIN semantic_definition entry
+              ON entry.logical_method_id=trace.entry_method_id
+             AND entry.resolution_status='unique'
+            WHERE entry.semantic_symbol_key=?
+              AND trace.scenario_id=?
+              AND trace.status=?
+              AND trace.source_path=?
+              AND trace.guard_count>=?
+              AND trace.identity_transition_count>=?
+            ORDER BY trace.trace_id
+            """,
+            (
+                str(evidence["entry_symbol_key"]),
+                str(evidence["scenario_id"]),
+                str(evidence["status"]),
+                str(evidence["source_path"]),
+                int(evidence.get("minimum_guard_count", 0)),
+                int(evidence.get("minimum_identity_transition_count", 0)),
+            ),
+        )
+    ]
+    required_steps = {str(item) for item in evidence.get("required_step_kinds", [])}
+    if not required_steps:
+        return len(trace_ids)
+    matched = 0
+    for trace_id in trace_ids:
+        actual_steps = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT DISTINCT step_kind FROM security_trace_step WHERE trace_id=?",
+                (trace_id,),
+            )
+        }
+        matched += required_steps.issubset(actual_steps)
+    return matched
+
+
 def _strong_evidence(
     connection: sqlite3.Connection, config_path: Path | None
 ) -> dict[str, str]:
@@ -205,19 +301,38 @@ def _strong_evidence(
         config_path = Path(__file__).resolve().parents[1] / "config/codeql.toml"
     try:
         config = tomllib.loads(config_path.read_text(encoding="utf-8"))
-        representatives = config["acceptance"]["required_representatives"]
+        evidence_items = config["acceptance"]["strong_evidence"]
     except (OSError, KeyError, TypeError, tomllib.TOMLDecodeError) as error:
         raise CallDataflowValidationError(
             f"cannot read strong-evidence configuration: {error}"
         ) from error
-    result: dict[str, str] = {}
-    for qualified_name in representatives:
-        count = _scalar(
-            connection,
-            "SELECT COUNT(*) FROM node WHERE qualified_name=? AND status='active'",
-            (qualified_name,),
+    if not isinstance(evidence_items, list) or not evidence_items:
+        raise CallDataflowValidationError(
+            "strong-evidence configuration must contain at least one entry"
         )
-        result[str(qualified_name)] = "pass" if count else "missing"
+    result: dict[str, str] = {}
+    for item in evidence_items:
+        if not isinstance(item, dict) or not item.get("id") or not item.get("kind"):
+            raise CallDataflowValidationError(
+                "each strong-evidence entry requires id and kind"
+            )
+        evidence_id = str(item["id"])
+        if evidence_id in result:
+            raise CallDataflowValidationError(
+                f"duplicate strong-evidence id: {evidence_id}"
+            )
+        kind = str(item["kind"])
+        if kind in {"call", "absent_call"}:
+            count = _call_evidence_count(connection, item)
+            passed = count > 0 if kind == "call" else count == 0
+        elif kind in {"security_trace", "absent_security_trace"}:
+            count = _security_trace_evidence_count(connection, item)
+            passed = count > 0 if kind == "security_trace" else count == 0
+        else:
+            raise CallDataflowValidationError(
+                f"strong evidence {evidence_id} has unsupported kind: {kind}"
+            )
+        result[evidence_id] = "pass" if passed else "missing"
     missing = [name for name, status in result.items() if status != "pass"]
     if missing:
         raise CallDataflowValidationError(

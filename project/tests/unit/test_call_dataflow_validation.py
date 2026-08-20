@@ -215,3 +215,137 @@ def test_stale_correction_is_reported_non_strict_and_rejected_strict(
     assert "stale corrections: 1" in report.warnings
     with pytest.raises(CallDataflowValidationError, match="non-active corrections"):
         validate_call_dataflow(path, require_aosp_evidence=True)
+
+
+def insert_definition(
+    connection: sqlite3.Connection,
+    *,
+    definition_id: str,
+    logical_id: str,
+    symbol_key: str,
+    line: int,
+) -> None:
+    insert_node(connection, logical_id)
+    insert_node(connection, definition_id)
+    connection.execute(
+        "INSERT INTO semantic_definition VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (
+            definition_id, "run-1", logical_id, symbol_key, "java", "method",
+            "frameworks/base", "frameworks/base/demo/A.java", line, 1, line, 20,
+            "unique", definition_id + "-content", "{}",
+        ),
+    )
+
+
+def write_evidence_config(path: Path) -> None:
+    path.write_text(
+        """
+[acceptance]
+minimum_identity_reconciliation_percent = 95
+
+[[acceptance.strong_evidence]]
+id = "exact-call"
+kind = "call"
+caller_symbol_key = "java|method|demo.A#caller()"
+callee_symbol_key = "java|method|demo.B#callee()"
+relation_kind = "must"
+source_path = "frameworks/base/demo/A.java"
+
+[[acceptance.strong_evidence]]
+id = "forbidden-call"
+kind = "absent_call"
+caller_symbol_key = "java|method|demo.A#caller()"
+callee_symbol_key = "java|method|demo.C#wrong()"
+relation_kind = "must"
+source_path = "frameworks/base/demo/A.java"
+
+[[acceptance.strong_evidence]]
+id = "guarded-security-trace"
+kind = "security_trace"
+entry_symbol_key = "java|method|demo.A#caller()"
+scenario_id = "demo-sensitive-flow"
+status = "guarded"
+source_path = "frameworks/base/demo/A.java"
+minimum_guard_count = 1
+minimum_identity_transition_count = 0
+required_step_kinds = ["guard"]
+""".strip()
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def test_strong_evidence_requires_exact_call_and_committed_negative(
+    tmp_path: Path,
+) -> None:
+    path = database(tmp_path)
+    config = tmp_path / "codeql.toml"
+    write_evidence_config(config)
+    with sqlite3.connect(path) as connection:
+        insert_run(connection)
+        insert_definition(
+            connection,
+            definition_id="caller-definition",
+            logical_id="caller-logical",
+            symbol_key="java|method|demo.A#caller()",
+            line=1,
+        )
+        insert_definition(
+            connection,
+            definition_id="callee-definition",
+            logical_id="callee-logical",
+            symbol_key="java|method|demo.B#callee()",
+            line=2,
+        )
+        insert_node(connection, "call-exact")
+        connection.execute(
+            "INSERT INTO call_site VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "call-exact", "run-1", "caller-logical", "frameworks/base",
+                "frameworks/base/demo/A.java", 3, 1, 3, 10, "x" * 64,
+                "static", "resolved", 1, "c" * 64, "{}",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO call_target VALUES(?,?,?,?,?)",
+            ("call-exact", "callee-logical", "must", "evidence-1", "t" * 64),
+        )
+        insert_node(connection, "trace-exact")
+        connection.execute(
+            "INSERT INTO security_trace VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "trace-exact", "run-1", "demo-sensitive-flow", "caller-logical",
+                "call-exact", 1, 0, "trace-fingerprint", "guarded",
+                "frameworks/base", "frameworks/base/demo/A.java", "{}",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO security_trace_step VALUES(?,?,?,?,?,?,?,?)",
+            (
+                "trace-exact", 0, "guard", None, None, "call-exact", None,
+                "trace-step-content",
+            ),
+        )
+
+    report = validate_call_dataflow(
+        path, require_aosp_evidence=True, config_path=config
+    )
+
+    assert report.strong_evidence == {
+        "exact-call": "pass",
+        "forbidden-call": "pass",
+        "guarded-security-trace": "pass",
+    }
+
+
+def test_strong_evidence_does_not_accept_representative_class_only(
+    tmp_path: Path,
+) -> None:
+    path = database(tmp_path)
+    config = tmp_path / "codeql.toml"
+    write_evidence_config(config)
+    with sqlite3.connect(path) as connection:
+        insert_node(connection, "demo.A")
+
+    with pytest.raises(CallDataflowValidationError, match="exact-call"):
+        validate_call_dataflow(path, require_aosp_evidence=True, config_path=config)

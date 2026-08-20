@@ -4,11 +4,46 @@ default_build_targets = ["services", "SystemUI"]
 
 [acceptance]
 minimum_identity_reconciliation_percent = 95
-required_representatives = [
-  "com.android.server.am.ActivityManagerService",
-  "com.android.server.pm.PackageManagerService.IPackageManagerImpl",
-  "com.android.systemui.statusbar.CommandQueue",
-]
+
+[[acceptance.strong_evidence]]
+id = "ams-component-permission-delegation"
+kind = "call"
+caller_symbol_key = "java|method|com.android.server.am.ActivityManagerService#checkComponentPermission(java.lang.String,int,int,int,int,boolean)"
+callee_symbol_key = "java|method|android.app.ActivityManager#checkComponentPermission(java.lang.String,int,int,int,boolean)"
+relation_kind = "must"
+source_path = "frameworks/base/services/core/java/com/android/server/am/ActivityManagerService.java"
+
+[[acceptance.strong_evidence]]
+id = "pms-delete-helper-delegation"
+kind = "call"
+caller_symbol_key = "java|method|com.android.server.pm.PackageManagerService#deletePackageX(java.lang.String,long,int,int,boolean)"
+callee_symbol_key = "java|method|com.android.server.pm.DeletePackageHelper#deletePackageX(java.lang.String,long,int,int,boolean,int)"
+relation_kind = "must"
+source_path = "frameworks/base/services/core/java/com/android/server/pm/PackageManagerService.java"
+
+[[acceptance.strong_evidence]]
+id = "systemui-kotlin-navigation-delegation"
+kind = "call"
+caller_symbol_key = "kotlin|method|com.android.systemui.statusbar.core.CommandQueueInitializer#createNavigationBar(com.android.internal.statusbar.RegisterStatusBarResult)"
+callee_symbol_key = "java|method|com.android.systemui.navigationbar.NavigationBarController#createNavigationBars(boolean,com.android.internal.statusbar.RegisterStatusBarResult)"
+relation_kind = "may"
+source_path = "frameworks/base/packages/SystemUI/src/com/android/systemui/statusbar/core/CommandQueueInitializer.kt"
+
+[[acceptance.strong_evidence]]
+id = "systemui-interface-dispatch-is-not-a-must-call"
+kind = "absent_call"
+caller_symbol_key = "kotlin|method|com.android.systemui.statusbar.core.CommandQueueInitializer#createNavigationBar(com.android.internal.statusbar.RegisterStatusBarResult)"
+callee_symbol_key = "java|method|com.android.systemui.navigationbar.NavigationBarControllerImpl#createNavigationBars(boolean,com.android.internal.statusbar.RegisterStatusBarResult)"
+relation_kind = "must"
+source_path = "frameworks/base/packages/SystemUI/src/com/android/systemui/statusbar/core/CommandQueueInitializer.kt"
+
+[[acceptance.strong_evidence]]
+id = "systemui-start-is-not-a-binder-security-trace"
+kind = "absent_security_trace"
+entry_symbol_key = "kotlin|method|com.android.systemui.statusbar.core.CommandQueueInitializer#start()"
+scenario_id = "binder_argument_to_sensitive_sink"
+status = "guarded"
+source_path = "frameworks/base/packages/SystemUI/src/com/android/systemui/statusbar/core/CommandQueueInitializer.kt"
 
 [scenarios.system_service_security]
 entry_kinds = ["binder", "aidl"]
