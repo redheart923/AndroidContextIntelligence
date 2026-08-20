@@ -11,7 +11,10 @@ predicate isCallerIdentitySource(Call call) {
 
 predicate isPermissionCheck(Call call) {
   callTo(call, "android.content", "Context", "enforceCallingPermission") or
-  callTo(call, "android.content", "Context", "enforceCallingOrSelfPermission") or
+  callTo(call, "android.content", "Context", "enforceCallingOrSelfPermission")
+}
+
+predicate isPermissionResultCheck(Call call) {
   callTo(call, "android.content", "Context", "checkCallingPermission") or
   callTo(call, "android.content", "Context", "checkCallingOrSelfPermission")
 }
@@ -35,7 +38,9 @@ predicate isIdentityRestore(Call call) {
 }
 
 predicate isConfiguredGuard(Call call) {
-  isPermissionCheck(call) or isAppOpsCheck(call) or isCrossUserCheck(call)
+  // Return-code checks and user-resolution calls require branch-sensitive
+  // success/failure modelling before they can be claimed as guards.
+  isPermissionCheck(call)
 }
 
 predicate isConfiguredSink(Call call) {

@@ -10,9 +10,18 @@ import semmle.code.java.controlflow.Dominance
 import lib.ExportHelpers
 import lib.SystemServiceModels
 
+predicate restoresSameToken(Call clear, Call restore) {
+  exists(LocalVariableDecl token, VarAccess access |
+    token.getInitializer() = clear and
+    restore.getArgument(0) = access and
+    access.getVariable() = token
+  )
+}
+
 predicate pairedAllExits(Call clear, Call restore) {
   isIdentityClear(clear) and isIdentityRestore(restore) and
   clear.getCaller() = restore.getCaller() and
+  restoresSameToken(clear, restore) and
   dominates(clear.getControlFlowNode(), restore.getControlFlowNode()) and
   postDominates(restore.getControlFlowNode(), clear.getControlFlowNode())
 }

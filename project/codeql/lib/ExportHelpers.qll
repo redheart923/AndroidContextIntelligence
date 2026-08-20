@@ -44,7 +44,8 @@ string erasedParametersOf(Callable c) {
 string returnTypeOf(Callable c) { result = erasedTypeName(c.getReturnType()) }
 
 string symbolKey(Callable c) {
-  result = declaringTypeOf(c) + "#" + c.getName() + "(" + erasedParametersOf(c) + ")"
+  result = languageOf(c) + "|" + callableKindOf(c) + "|" + declaringTypeOf(c) +
+    "#" + c.getName() + "(" + erasedParametersOf(c) + ")"
 }
 
 string repositoryPathOf(Element e) {

@@ -1,6 +1,6 @@
 /**
  * @name Android system-service dominating guards
- * @description Exports configured permission, AppOps, and cross-user checks that dominate a sensitive sink.
+ * @description Exports configured fail-closed permission enforcement calls that dominate a sensitive sink.
  * @kind table
  * @id android-context/system-service-guards
  */

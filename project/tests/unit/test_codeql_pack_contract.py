@@ -71,6 +71,12 @@ def test_call_site_fixture_locks_dispatch_and_language_semantics() -> None:
     assert any("<anonymous>@Calls.java" in row for row in rows)
 
 
+def test_semantic_symbol_key_includes_language_and_callable_kind() -> None:
+    helpers = (CODEQL_ROOT / "lib/ExportHelpers.qll").read_text(encoding="utf-8")
+
+    assert 'result = languageOf(c) + "|" + callableKindOf(c) + "|"' in helpers
+
+
 def test_security_fixture_locks_positive_and_negative_semantics() -> None:
     root = CODEQL_ROOT / "tests/security-flow"
     guard_rows = (root / "SystemServiceGuards.expected").read_text(encoding="utf-8").splitlines()

@@ -35,4 +35,14 @@ public class SecurityService extends Binder {
             Binder.restoreCallingIdentity(token);
         }
     }
+
+    public void nestedIdentity(String value) {
+        long outer = Binder.clearCallingIdentity();
+        long inner = Binder.clearCallingIdentity();
+        try {
+            SensitiveStore.writeSecureSetting(value);
+        } finally {
+            Binder.restoreCallingIdentity(inner);
+        }
+    }
 }
