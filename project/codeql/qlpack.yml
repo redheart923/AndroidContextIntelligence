@@ -1,0 +1,5 @@
+name: android-context/java-kotlin-call-dataflow
+version: 0.1.0
+extractor: java
+dependencies:
+  codeql/java-all: "*"

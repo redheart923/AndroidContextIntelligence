@@ -1,0 +1,2 @@
+| 1 | fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean) | 32 | 0 | missing_all_exit_restore | SecurityService.java |
+| 1 | fixture.security.SecurityService#pairedIdentity(java.lang.String) | 23 | 27 | paired_all_exits | SecurityService.java |
