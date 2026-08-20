@@ -27,6 +27,8 @@
 
 ## Plans
 
+- [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](plans/2026-08-20-java-kotlin-call-dataflow-graph-v01-plan.md): CodeQL database preparation, typed semantic storage, call/dataflow/security facts, corrections, atomic publication, and real-AOSP acceptance plan.
+
 可执行实施计划和验收记录。
 
 - [Multi-Repository Source Configuration v0.1](plans/2026-07-16-multi-repository-source-configuration-v01-plan.md)：已完成的多仓库配置实施与验收记录。
