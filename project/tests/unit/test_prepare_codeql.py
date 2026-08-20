@@ -17,6 +17,11 @@ from workspace.codeql_database import (
 def request(tmp_path: Path) -> PreparationRequest:
     aosp = tmp_path / "aosp"
     aosp.mkdir()
+    (aosp / "build").mkdir()
+    (aosp / "build" / "envsetup.sh").write_text(
+        "# fixture\n",
+        encoding="utf-8",
+    )
     codeql = tmp_path / "codeql"
     codeql.write_text("fixture", encoding="utf-8")
     return PreparationRequest(
@@ -57,7 +62,12 @@ class FakeRunner:
         self.commands.append(tuple(command))
         if command[1:3] == ["database", "create"]:
             if self.fail_create:
-                raise subprocess.CalledProcessError(17, command)
+                raise subprocess.CalledProcessError(
+                    17,
+                    command,
+                    output="database create stdout",
+                    stderr="build/envsetup.sh: fixture build failed",
+                )
             database = Path(command[3])
             database.mkdir(parents=True)
             (database / "codeql-database.yml").write_text(
@@ -96,11 +106,30 @@ def test_prepare_database_removes_partial_entry_after_failure(
 ) -> None:
     value = request(tmp_path)
 
-    with pytest.raises(CodeQLDatabaseError, match="database create"):
+    with pytest.raises(
+        CodeQLDatabaseError,
+        match="build/envsetup.sh: fixture build failed",
+    ):
         prepare_database(value, runner=FakeRunner(fail_create=True))
 
     database_root = value.cache_root / "databases"
     assert not database_root.exists() or list(database_root.iterdir()) == []
+
+
+def test_prepare_database_rejects_missing_aosp_build_entrypoint(
+    tmp_path: Path,
+) -> None:
+    value = request(tmp_path)
+    (value.aosp_root / "build" / "envsetup.sh").unlink()
+    runner = FakeRunner()
+
+    with pytest.raises(
+        CodeQLDatabaseError,
+        match=r"AOSP build entrypoint is missing: .*build[/\\]envsetup\.sh",
+    ):
+        prepare_database(value, runner=runner)
+
+    assert runner.commands == []
 
 
 def test_prepare_database_rejects_tampered_cached_marker(tmp_path: Path) -> None:

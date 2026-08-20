@@ -347,7 +347,23 @@ def _run(
 ) -> subprocess.CompletedProcess[str]:
     try:
         result = runner(command, cwd=cwd)
-    except (OSError, subprocess.CalledProcessError) as error:
+    except subprocess.CalledProcessError as error:
+        details: list[str] = []
+        for label, value in (("stderr", error.stderr), ("stdout", error.stdout)):
+            if value:
+                rendered = (
+                    value.decode(errors="replace")
+                    if isinstance(value, bytes)
+                    else str(value)
+                ).strip()
+                if rendered:
+                    details.append(f"{label}:\n{rendered[-12000:]}")
+        suffix = "\n" + "\n".join(details) if details else ""
+        raise CodeQLDatabaseError(
+            f"CodeQL {operation} failed with status {error.returncode}: "
+            f"{error}{suffix}"
+        ) from error
+    except OSError as error:
         raise CodeQLDatabaseError(f"CodeQL {operation} failed: {error}") from error
     if result.returncode != 0:
         raise CodeQLDatabaseError(
@@ -375,6 +391,15 @@ def prepare_database(
             database=database,
         )
         return database.resolve()
+
+    build_entrypoint = request.aosp_root / "build" / "envsetup.sh"
+    if not build_entrypoint.is_file():
+        raise CodeQLDatabaseError(
+            "AOSP build entrypoint is missing: "
+            f"{build_entrypoint}. A Java/Kotlin CodeQL database requires a "
+            "buildable AOSP checkout; build-mode=none is not accepted because "
+            "it excludes Kotlin."
+        )
 
     databases_root.mkdir(parents=True, exist_ok=True)
     partial = databases_root / f".{cache_key}.partial-{os.getpid()}-{uuid.uuid4().hex}"
