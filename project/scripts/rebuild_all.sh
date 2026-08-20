@@ -162,6 +162,10 @@ python -m workspace.cli \
 
 sqlite3 "$STAGED_DB" < "$PROJECT_ROOT/storage/schema.sql"
 
+python -m workspace.schema_migrations \
+    --db "$STAGED_DB" \
+    --migrations "$PROJECT_ROOT/storage/migrations"
+
 python -m workspace.vendor_artifacts prepare \
     --input-dir "$VENDOR_INPUT" \
     --cache-dir "$VENDOR_CACHE" \

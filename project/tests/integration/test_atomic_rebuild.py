@@ -30,6 +30,7 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert 'STAGED_DB="$STAGING/android_context.db"' in script
     assert 'STAGED_WORKSPACE="$STAGING/workspace"' in script
     assert 'STAGED_RAW="$STAGING/raw"' in script
+    assert "workspace.schema_migrations" in script
     assert 'STAGED_RAW/permission/permission-semantics-report.json' in script
     assert "workspace.permission_validation" in script
     assert "workspace.symbol_collision_validation" in script
@@ -55,6 +56,9 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     )
     assert script.index("workspace.permission_validation") < script.index(
         "workspace.build_publish prepare"
+    )
+    assert script.index("workspace.schema_migrations") < script.index(
+        "workspace.pipeline java"
     )
 
 
@@ -280,6 +284,10 @@ def project(tmp_path: Path) -> Path:
     shutil.copy2(CANONICAL_SCRIPT, root / "scripts" / "rebuild_all.sh")
     _write(root / ".venv/bin/activate", "")
     _write(root / "storage/schema.sql", SCHEMA)
+    shutil.copytree(
+        SNAPSHOT_ROOT / "storage/migrations",
+        root / "storage/migrations",
+    )
     _write(root / "config/source_roots.default.toml", "[workspace]\n")
     _write(root / "config/parser_registry.toml", "[parsers]\n")
     _write(root / "workspace/cli.py", CLI_STUB)

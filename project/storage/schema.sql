@@ -1,6 +1,20 @@
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
 
+CREATE TABLE IF NOT EXISTS schema_migration (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  sha256 TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS schema_migration (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  sha256 TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS node (
   node_id TEXT PRIMARY KEY,
   node_type TEXT NOT NULL,
