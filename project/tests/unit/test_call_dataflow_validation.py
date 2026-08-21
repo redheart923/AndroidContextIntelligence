@@ -8,6 +8,7 @@ import pytest
 from collectors.codeql.corrections import apply_corrections, parse_correction
 from workspace.call_dataflow_validation import (
     CallDataflowValidationError,
+    _security_trace_evidence_count,
     validate_call_dataflow,
 )
 from workspace.schema_migrations import apply_migrations
@@ -349,3 +350,40 @@ def test_strong_evidence_does_not_accept_representative_class_only(
 
     with pytest.raises(CallDataflowValidationError, match="exact-call"):
         validate_call_dataflow(path, require_aosp_evidence=True, config_path=config)
+
+
+def test_security_evidence_combines_trace_and_dataflow_step_kinds() -> None:
+    connection = sqlite3.connect(":memory:")
+    connection.executescript(
+        """
+        CREATE TABLE semantic_definition(
+          logical_method_id TEXT, resolution_status TEXT, semantic_symbol_key TEXT
+        );
+        CREATE TABLE security_trace(
+          trace_id TEXT, entry_method_id TEXT, scenario_id TEXT, status TEXT,
+          source_path TEXT, guard_count INTEGER, identity_transition_count INTEGER
+        );
+        CREATE TABLE security_trace_step(
+          trace_id TEXT, step_kind TEXT, dataflow_path_id TEXT
+        );
+        CREATE TABLE dataflow_step(path_id TEXT, step_kind TEXT);
+        INSERT INTO semantic_definition VALUES('entry','unique','java|method|demo.A#entry()');
+        INSERT INTO security_trace VALUES(
+          'trace','entry','binder_argument_to_sensitive_sink','unguarded',
+          'frameworks/base/demo/A.java',0,0
+        );
+        INSERT INTO security_trace_step VALUES('trace','dataflow_path','path');
+        INSERT INTO dataflow_step VALUES('path','source');
+        INSERT INTO dataflow_step VALUES('path','sink');
+        """
+    )
+    evidence = {
+        "id": "positive-path",
+        "entry_symbol_key": "java|method|demo.A#entry()",
+        "scenario_id": "binder_argument_to_sensitive_sink",
+        "status": "unguarded",
+        "source_path": "frameworks/base/demo/A.java",
+        "required_step_kinds": ["source", "sink"],
+    }
+
+    assert _security_trace_evidence_count(connection, evidence) == 1

@@ -286,8 +286,18 @@ def _security_trace_evidence_count(
         actual_steps = {
             str(row[0])
             for row in connection.execute(
-                "SELECT DISTINCT step_kind FROM security_trace_step WHERE trace_id=?",
-                (trace_id,),
+                """
+                SELECT step_kind
+                FROM security_trace_step
+                WHERE trace_id=?
+                UNION
+                SELECT flow.step_kind
+                FROM security_trace_step trace_step
+                JOIN dataflow_step flow
+                  ON flow.path_id=trace_step.dataflow_path_id
+                WHERE trace_step.trace_id=?
+                """,
+                (trace_id, trace_id),
             )
         }
         matched += required_steps.issubset(actual_steps)
