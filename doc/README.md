@@ -8,6 +8,7 @@
 
 - [Android-specific Context Graph](architecture/android-specific-context-graph.md)：总体目标、分层模型、技术选型、语义图谱和长期路线图。
 - [Final Technical Plan](architecture/Android_Context_Graph_Final_Technical_Plan.md)：完整技术方案，包含节点/边设计、解析器策略和实施计划。
+- [Internal Web Analysis Platform Extension](architecture/internal-web-analysis-platform-extension.md)：面向内部研发的 Web、REST/GraphQL 和证据化 AI 问答扩展；当前仅为路线图记录，尚未实施。
 
 ## Feasibility
 
