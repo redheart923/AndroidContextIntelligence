@@ -441,9 +441,14 @@ bash scripts/rebuild_all.sh \
 `MAY_CALL` 与未解析调用；`OBSERVED_CALL` 保留给未来运行时证据。
 
 跨方法数据流来自 CodeQL PathGraph 的 SARIF `codeFlows/threadFlowLocations`，每个
-`dataflow_step` 都对应真实路径节点和源码位置，不以两个端点冒充完整路径。查询源码
-哈希参与缓存身份；严格验收还会检查 `config/codeql.toml` 中 AMS、PMS、Kotlin
-SystemUI 的精确调用事实和已提交负例。
+`dataflow_step` 都对应真实路径节点和源码位置，不以两个端点冒充完整路径。查询、
+本地 QLL 依赖和 Python 解码器哈希共同参与缓存身份。Binder identity 只有在敏感
+sink 被证明位于 clear/restore 区域内时才附着到安全轨迹。严格验收还会检查
+`config/codeql.toml` 中 AMS、PMS、Kotlin SystemUI 的精确调用、安全路径和已提交负例。
+
+CodeQL 数据库清单绑定精确仓库集合、构建参数、CLI/extractor 身份，以及排除运行时
+cache/log 后的数据库实际文件清单、字节数和内容 SHA-256；数据库内容被修改后不会
+作为 verified cache 复用。
 
 纠错文件存放在 `config/corrections/*.toml`，支持 `suppress`、`replace`、
 `annotate`、`add`。原始事实不删除；有效视图叠加 `FACT_CORRECTION`，hash/revision

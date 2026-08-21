@@ -121,17 +121,27 @@ The CodeQL database cache key hashes:
 - repository revisions, dirty states, and source inventories;
 - product, variant, and ordered build targets;
 - build command and relevant environment identity;
-- CodeQL CLI and Java/Kotlin extractor versions;
-- generated-source inventory and finalized database metadata.
+- CodeQL CLI and Java/Kotlin extractor versions.
+
+The finalized database fingerprint additionally hashes the immutable extracted
+database/source inventory and finalized database metadata. Output-derived
+identity is validated on reuse but is not available when the pre-build cache
+lookup key is calculated.
 
 Query packs do not alter a CodeQL database, so their versions are not part of
 the database key. Query-result caches separately hash the CodeQL database
-fingerprint, query-pack lock, query ID, query version, and query parameters.
+fingerprint, query-pack lock, every local QL/QLL semantic dependency, the
+normalizer/decoder implementation, query ID, query version, and query
+parameters.
 
 The cache is published only after `codeql database finalize` and a metadata
 validation pass. A rebuild rejects a database whose source revision,
 inventory, product, variant, target set, language, or extractor identity does
 not match its manifest.
+The manifest also inventories the immutable extracted database and source
+archives by relative path, byte size, and SHA-256. Runtime query caches and
+logs are excluded explicitly; all extracted relations and source archives are
+covered. Any covered-file mutation invalidates reuse.
 
 ### 4.3 Actual coverage, not configured intent
 
@@ -434,8 +444,10 @@ one branch cannot guard a sink reachable through another branch.
 An identity transition records token creation, the region executed under
 cleared identity, and restoration. A valid paired transition requires
 restoration on all modeled normal and exceptional exits, normally through a
-`finally` block. Unpaired or conditionally restored transitions remain
-diagnostics and cannot be presented as safe pairing.
+`finally` block. A trace may attach that transition only when CodeQL also
+proves its sink lies inside the dominated clear/restore region. Unpaired or
+conditionally restored transitions remain diagnostics and cannot be presented
+as safe pairing.
 
 ## 9. Corrections
 

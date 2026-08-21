@@ -16,9 +16,9 @@ an incomplete AOSP checkout.
 Executed from WSL against the Git worktree on 2026-08-20:
 
 ```text
-project suite: 226 passed in 34.73s
-root suite: 57 passed in 50.03s
-CodeQL fixtures: 4 passed in 5m09s
+project suite: 231 passed in 28.36s
+root suite: 57 passed in 60.42s
+CodeQL fixtures: 4 passed in 5m46s
 ```
 
 These results verify Python contracts, typed schema, query normalization, identity
@@ -37,6 +37,13 @@ variant, targets, repository identities, CLI version, and extractor identity. Im
 recomputes source, preparation-cache, marker, and database fingerprints; requires an exact
 repository identity set; and verifies that query execution uses the same CodeQL CLI and
 resolved extractor identity as database creation.
+
+The query cache additionally fingerprints all local QL/QLL dependencies and the Python
+normalizer. Database verification inventories immutable extracted files and source archives,
+so marker-preserving content mutation is rejected. Binder identity rows now include the exact
+sensitive-sink line and are materialized only onto that sink. The strict configuration also
+contains a positive PMS Binder-argument-to-delete security-path requirement; it remains pending
+real-database confirmation together with the other AOSP evidence below.
 
 ## Real-AOSP evidence
 

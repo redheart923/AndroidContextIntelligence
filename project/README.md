@@ -148,10 +148,14 @@ annotate/add，且不会改写提取器原始证据。
 
 数据流查询使用 CodeQL `PathGraph` 的 path-problem 输出。运行器将 BQRS 解释为
 SARIF v2.1.0，并按 `codeFlows/threadFlowLocations` 的真实顺序写入
-`dataflow_step`；不会再用 source/sink 两个端点伪造完整路径。查询文件 SHA-256
-参与结果缓存键，QL 内容变化会强制重新求值。严格 AOSP 验收读取
-`config/codeql.toml` 中精确到 semantic symbol key、源码路径和关系类型的正/负
-证据项，类节点存在本身不能通过门禁。
+`dataflow_step`；不会再用 source/sink 两个端点伪造完整路径。查询、QLL 依赖和
+Python normalizer SHA-256 共同参与结果缓存键，任一语义实现变化都会强制重新求值。
+Binder identity 仅与被 CodeQL 证明位于 clear/restore 区域内的 sink 组合。严格
+AOSP 验收读取 `config/codeql.toml` 中精确到 semantic symbol key、源码路径和关系
+类型的正向调用、正向安全路径和已提交负例，类节点存在本身不能通过门禁。
+
+verified CodeQL DB 清单还会重算数据库实际不可变内容的 SHA-256、文件数与字节数，
+并校验仓库、构建参数、CLI/extractor 身份；内容被篡改的缓存会拒绝导入。
 
 运维命令：
 
