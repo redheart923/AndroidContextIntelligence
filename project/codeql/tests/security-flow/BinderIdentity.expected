@@ -1,5 +1,5 @@
-| 1 | java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean) | 32 | 0 | missing_all_exit_restore | SecurityService.java |
-| 1 | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | 40 | 0 | missing_all_exit_restore | SecurityService.java |
-| 1 | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | 41 | 45 | paired_all_exits | SecurityService.java |
-| 1 | java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String) | 23 | 27 | paired_all_exits | SecurityService.java |
-| 1 | java\|method\|fixture.security.SecurityService#straightLineRestore(java.lang.String) | 58 | 0 | missing_all_exit_restore | SecurityService.java |
+| 1 | java\|method\|fixture.security.SecurityService#brokenIdentity(java.lang.String,boolean) | 32 | 0 | 33 | missing_all_exit_restore | SecurityService.java |
+| 1 | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | 40 | 0 | 43 | missing_all_exit_restore | SecurityService.java |
+| 1 | java\|method\|fixture.security.SecurityService#nestedIdentity(java.lang.String) | 41 | 45 | 43 | paired_all_exits | SecurityService.java |
+| 1 | java\|method\|fixture.security.SecurityService#pairedIdentity(java.lang.String) | 23 | 27 | 25 | paired_all_exits | SecurityService.java |
+| 1 | java\|method\|fixture.security.SecurityService#straightLineRestore(java.lang.String) | 58 | 0 | 59 | missing_all_exit_restore | SecurityService.java |

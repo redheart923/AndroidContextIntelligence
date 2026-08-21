@@ -171,6 +171,7 @@ class IdentityTransitionRecord:
     owner_symbol_key: str
     clear_line: int
     restore_line: int | None
+    sink_line: int
     status: str
     source_path: str
     query_id: str
@@ -181,7 +182,9 @@ class IdentityTransitionRecord:
     def __post_init__(self) -> None:
         if self.status not in {"paired_all_exits", "missing_all_exit_restore"}:
             raise RecordError(f"invalid identity status: {self.status!r}")
-        if self.clear_line < 1 or (self.restore_line is not None and self.restore_line < 1):
+        if min(self.clear_line, self.sink_line) < 1 or (
+            self.restore_line is not None and self.restore_line < 1
+        ):
             raise RecordError("identity source line must be positive")
         if self.status == "paired_all_exits" and self.restore_line is None:
             raise RecordError("paired identity transition has no restore line")

@@ -94,3 +94,19 @@ def test_security_fixture_locks_positive_and_negative_semantics() -> None:
     assert any(row == "edges" for row in flow_rows)
     assert any(row == "nodes" for row in flow_rows)
     assert any("#throughHelper(" in row for row in flow_rows)
+
+
+def test_acceptance_config_requires_positive_security_semantics() -> None:
+    import tomllib
+
+    config = tomllib.loads(
+        (PROJECT_ROOT / "config/codeql.toml").read_text(encoding="utf-8")
+    )
+    positive = [
+        item
+        for item in config["acceptance"]["strong_evidence"]
+        if item["kind"] == "security_trace"
+    ]
+
+    assert positive
+    assert all(item.get("required_step_kinds") for item in positive)

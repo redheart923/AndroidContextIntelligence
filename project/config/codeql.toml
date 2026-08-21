@@ -45,6 +45,17 @@ scenario_id = "binder_argument_to_sensitive_sink"
 status = "guarded"
 source_path = "frameworks/base/packages/SystemUI/src/com/android/systemui/statusbar/core/CommandQueueInitializer.kt"
 
+[[acceptance.strong_evidence]]
+id = "pms-delete-binder-argument-reaches-sensitive-delete"
+kind = "security_trace"
+entry_symbol_key = "java|method|com.android.server.pm.IPackageManagerBase#deletePackageVersioned(android.content.pm.VersionedPackage,android.content.pm.IPackageDeleteObserver2,int,int)"
+scenario_id = "binder_argument_to_sensitive_sink"
+status = "unguarded"
+source_path = "frameworks/base/services/core/java/com/android/server/pm/DeletePackageHelper.java"
+minimum_guard_count = 0
+minimum_identity_transition_count = 0
+required_step_kinds = ["source", "sink"]
+
 [scenarios.system_service_security]
 entry_kinds = ["binder", "aidl"]
 checks = ["permission", "app_ops", "cross_user"]

@@ -263,7 +263,7 @@ def test_guard_is_not_materialized_as_dataflow(tmp_path: Path) -> None:
 def test_unpaired_identity_restore_remains_diagnostic(tmp_path: Path) -> None:
     database = graph_db(tmp_path)
     identity = IdentityTransitionRecord(
-        OWNER_KEY, 20, None, "missing_all_exit_restore", SOURCE,
+        OWNER_KEY, 20, None, 15, "missing_all_exit_restore", SOURCE,
         "BinderIdentity", "1", "d" * 64,
     )
 
@@ -278,11 +278,11 @@ def test_unpaired_identity_restore_remains_diagnostic(tmp_path: Path) -> None:
 def test_paired_identity_requires_restore_and_replay_clears_stale_safe_edge(tmp_path: Path) -> None:
     database = graph_db(tmp_path)
     paired = IdentityTransitionRecord(
-        OWNER_KEY, 20, 24, "paired_all_exits", SOURCE,
+        OWNER_KEY, 20, 24, 15, "paired_all_exits", SOURCE,
         "BinderIdentity", "1", "d" * 64,
     )
     unpaired = IdentityTransitionRecord(
-        OWNER_KEY, 20, None, "missing_all_exit_restore", SOURCE,
+        OWNER_KEY, 20, None, 15, "missing_all_exit_restore", SOURCE,
         "BinderIdentity", "1", "d" * 64,
     )
 
@@ -294,3 +294,20 @@ def test_paired_identity_requires_restore_and_replay_clears_stale_safe_edge(tmp_
     assert edge_count(database, "IDENTITY_RESTORED_BY") == 0
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT status FROM security_trace").fetchone()[0] == "identity_unpaired"
+
+
+def test_identity_transition_for_another_sink_is_not_attached(tmp_path: Path) -> None:
+    database = graph_db(tmp_path)
+    unrelated = IdentityTransitionRecord(
+        OWNER_KEY, 20, 24, 99, "paired_all_exits", SOURCE,
+        "BinderIdentity", "1", "d" * 64,
+    )
+
+    materialize_security_facts(database, (path_record(), unrelated), run_context())
+
+    assert edge_count(database, "IDENTITY_CLEARED_BY") == 0
+    assert edge_count(database, "IDENTITY_RESTORED_BY") == 0
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT status FROM security_trace"
+        ).fetchone()[0] == "unguarded"

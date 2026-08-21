@@ -167,6 +167,7 @@ def _record(value: dict[str, object]) -> NormalizedRecord:
             owner_symbol_key=str(value["owner_symbol_key"]),
             clear_line=int(value["clear_line"]),
             restore_line=(None if value.get("restore_line") is None else int(value["restore_line"])),
+            sink_line=int(value["sink_line"]),
             status=str(value["status"]),
             source_path=str(value["source_path"]),
             **common,

@@ -33,23 +33,34 @@ predicate pairedAllExits(Call clear, Call restore) {
   postDominates(restore.getControlFlowNode(), clear.getControlFlowNode())
 }
 
-predicate identityRow(Call clear, int restoreLine, string resultStatus) {
+predicate sinkInsideIdentityRegion(Call clear, Call restore, Call sink) {
+  pairedAllExits(clear, restore) and isConfiguredSink(sink) and
+  sink.getCaller() = clear.getCaller() and
+  dominates(clear.getControlFlowNode(), sink.getControlFlowNode()) and
+  postDominates(restore.getControlFlowNode(), sink.getControlFlowNode())
+}
+
+predicate identityRow(Call clear, Call sink, int restoreLine, string resultStatus) {
   exists(Call restore |
-    pairedAllExits(clear, restore) and restoreLine = restore.getLocation().getStartLine() and
+    sinkInsideIdentityRegion(clear, restore, sink) and
+    restoreLine = restore.getLocation().getStartLine() and
     resultStatus = "paired_all_exits"
   )
   or
   isIdentityClear(clear) and not exists(Call restore | pairedAllExits(clear, restore)) and
+  isConfiguredSink(sink) and sink.getCaller() = clear.getCaller() and
+  dominates(clear.getControlFlowNode(), sink.getControlFlowNode()) and
   restoreLine = 0 and resultStatus = "missing_all_exit_restore"
 }
 
-from Call clear, int restoreLine, string resultStatus
+from Call clear, Call sink, int restoreLine, string resultStatus
 where
-  identityRow(clear, restoreLine, resultStatus)
+  identityRow(clear, sink, restoreLine, resultStatus)
 select
   schemaVersion() as schema_version,
   symbolKey(clear.getCaller()) as owner_symbol_key,
   clear.getLocation().getStartLine() as clear_line,
   restoreLine as restore_line,
+  sink.getLocation().getStartLine() as sink_line,
   resultStatus as transition_status,
   sourcePathOf(clear) as source_path

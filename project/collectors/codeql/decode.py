@@ -49,7 +49,7 @@ QUERY_COLUMNS = {
     },
     "BinderIdentity": {
         "schema_version", "owner_symbol_key", "clear_line", "restore_line",
-        "transition_status", "source_path",
+        "sink_line", "transition_status", "source_path",
     },
 }
 
@@ -371,7 +371,8 @@ def _decode_identity(
             result.append(
                 IdentityTransitionRecord(
                     owner_symbol_key=row["owner_symbol_key"], clear_line=_integer(row, "clear_line"),
-                    restore_line=restore or None, status=row["transition_status"],
+                    restore_line=restore or None, sink_line=_integer(row, "sink_line"),
+                    status=row["transition_status"],
                     source_path=row["source_path"], query_id="BinderIdentity",
                     query_version=query_version, database_fingerprint=database_fingerprint,
                 )

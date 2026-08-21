@@ -756,7 +756,11 @@ def materialize_security_facts(
             matching_identities: list[tuple[IdentityTransitionRecord, str, str | None]] = []
             for identity in identities:
                 owner = _logical_method_id(connection, identity.owner_symbol_key)
-                if owner != sink_method_id or identity.source_path != source_path:
+                if (
+                    owner != sink_method_id
+                    or identity.source_path != source_path
+                    or identity.sink_line != sink_line
+                ):
                     continue
                 clear_site = _call_site_at(
                     connection, owner_method_id=sink_method_id,
