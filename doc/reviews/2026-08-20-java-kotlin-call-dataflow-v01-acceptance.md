@@ -16,9 +16,9 @@ an incomplete AOSP checkout.
 Executed from WSL against the Git worktree on 2026-08-20:
 
 ```text
-project suite: 223 passed in 24.52s
-root suite: 57 passed in 47.84s
-CodeQL fixtures: 4 passed in 3m17s
+project suite: 226 passed in 34.73s
+root suite: 57 passed in 50.03s
+CodeQL fixtures: 4 passed in 5m09s
 ```
 
 These results verify Python contracts, typed schema, query normalization, identity
@@ -31,6 +31,12 @@ ordered `codeFlows/threadFlowLocations` are materialized as `dataflow_step` rows
 source hashes participate in result-cache keys. Strong-evidence configuration now binds
 exact semantic caller/callee keys, source paths, relation kinds, security-trace semantics,
 and committed absence checks instead of accepting representative class existence.
+
+The CodeQL database manifest schema records build resources in addition to product,
+variant, targets, repository identities, CLI version, and extractor identity. Import now
+recomputes source, preparation-cache, marker, and database fingerprints; requires an exact
+repository identity set; and verifies that query execution uses the same CodeQL CLI and
+resolved extractor identity as database creation.
 
 ## Real-AOSP evidence
 
