@@ -76,6 +76,7 @@ class QueryRunManifest:
     schema_version: int
     database_fingerprint: str
     pack_lock_sha256: str
+    semantic_bundle_sha256: str
     codeql_version: str
     extractor_version: str
     created_at: str
@@ -201,6 +202,39 @@ def _repository_paths(database: Path) -> tuple[str, ...]:
     return paths
 
 
+def _semantic_bundle_fingerprint(pack: Path) -> str:
+    project_root = Path(__file__).resolve().parents[1]
+    files: list[tuple[str, Path]] = [
+        (
+            "pack/" + path.relative_to(pack).as_posix(),
+            path,
+        )
+        for path in sorted(pack.rglob("*"))
+        if path.is_file() and path.suffix in {".ql", ".qll", ".yml"}
+    ]
+    files.extend(
+        (
+            "normalizer/" + relative,
+            project_root / relative,
+        )
+        for relative in (
+            "collectors/codeql/decode.py",
+            "collectors/codeql/model.py",
+            "workspace/codeql_runner.py",
+        )
+    )
+    missing = [name for name, path in files if not path.is_file()]
+    if missing:
+        raise CodeQLRunnerError(
+            f"semantic query bundle is incomplete: {missing}"
+        )
+    return _sha256_bytes(
+        _canonical_bytes(
+            [(name, _sha256_file(path)) for name, path in sorted(files)]
+        )
+    )
+
+
 def _publish(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.parent / f".{destination.name}.{uuid.uuid4().hex}.tmp"
@@ -227,6 +261,7 @@ def run_queries(
         raise CodeQLRunnerError(f"CodeQL pack has no queries: {pack}")
     database_fingerprint = _database_fingerprint(database)
     lock_hash = _sha256_file(lock)
+    semantic_bundle_hash = _semantic_bundle_fingerprint(pack)
     version, extractor_version = _codeql_identity(codeql_bin, runner, pack)
     artifacts: list[QueryArtifact] = []
     for query in queries:
@@ -238,7 +273,10 @@ def run_queries(
             lock_hash,
             query_id,
             query_version,
-            {"query_sha256": query_sha256},
+            {
+                "query_sha256": query_sha256,
+                "semantic_bundle_sha256": semantic_bundle_hash,
+            },
         )
         cache = output_dir / "cache" / cache_key
         cache_manifest = cache / "manifest.json"
@@ -327,7 +365,9 @@ def run_queries(
         artifacts.append(artifact)
     manifest = QueryRunManifest(
         schema_version=1, database_fingerprint=database_fingerprint,
-        pack_lock_sha256=lock_hash, codeql_version=version,
+        pack_lock_sha256=lock_hash,
+        semantic_bundle_sha256=semantic_bundle_hash,
+        codeql_version=version,
         extractor_version=extractor_version,
         created_at=datetime.now(timezone.utc).isoformat(), queries=tuple(artifacts),
     )

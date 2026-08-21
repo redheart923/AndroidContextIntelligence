@@ -17,6 +17,7 @@ from workspace.codeql_database import (
     preparation_fingerprint,
     validate_database_manifest,
     validate_manifest_self_consistency,
+    _database_content_fingerprint,
 )
 
 
@@ -57,7 +58,7 @@ def fixture_request(
 def fixture_manifest(request: PreparationRequest) -> CodeQLDatabaseManifest:
     cache_key = preparation_fingerprint(request)
     return CodeQLDatabaseManifest(
-        schema_version=2,
+        schema_version=3,
         status="verified",
         cache_key=cache_key,
         language="java-kotlin",
@@ -71,6 +72,9 @@ def fixture_manifest(request: PreparationRequest) -> CodeQLDatabaseManifest:
         extractor_version=request.extractor_version,
         database_fingerprint="2" * 64,
         database_marker_sha256="3" * 64,
+        database_content_sha256="4" * 64,
+        database_content_file_count=1,
+        database_content_bytes=42,
         observed_java_files=10,
         observed_kotlin_files=2,
         repositories=request.repositories,
@@ -172,6 +176,17 @@ def test_manifest_json_round_trip_is_stable(tmp_path: Path) -> None:
     assert restored == manifest
 
 
+def test_old_manifest_schema_is_rejected_as_invalid() -> None:
+    with pytest.raises(CodeQLDatabaseError, match="manifest fields"):
+        CodeQLDatabaseManifest.from_dict(
+            {
+                "schema_version": 2,
+                "repositories": [],
+                "database_info": {},
+            }
+        )
+
+
 def test_manifest_self_consistency_rejects_tampered_cache_key(
     tmp_path: Path,
 ) -> None:
@@ -182,6 +197,9 @@ def test_manifest_self_consistency_rejects_tampered_cache_key(
     marker = database / "codeql-database.yml"
     marker.write_text("primaryLanguage: java-kotlin\n", encoding="utf-8")
     marker_digest = hashlib.sha256(marker.read_bytes()).hexdigest()
+    content_digest, content_file_count, content_bytes = (
+        _database_content_fingerprint(database)
+    )
     manifest = replace(
         manifest,
         database_marker_sha256=marker_digest,
@@ -191,11 +209,15 @@ def test_manifest_self_consistency_rejects_tampered_cache_key(
                     "cache_key": manifest.cache_key,
                     "database_info": manifest.database_info,
                     "database_marker_sha256": marker_digest,
+                    "database_content_sha256": content_digest,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode()
         ).hexdigest(),
+        database_content_sha256=content_digest,
+        database_content_file_count=content_file_count,
+        database_content_bytes=content_bytes,
     )
 
     with pytest.raises(CodeQLDatabaseError, match="cache_key"):

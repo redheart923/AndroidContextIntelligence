@@ -154,6 +154,7 @@ def test_run_queries_writes_normalized_manifest_and_reuses_verified_cache(tmp_pa
     assert first.queries[0].normalized_sha256
     assert first.codeql_version == "2.26.3"
     assert first.extractor_version.startswith("resolve-languages:")
+    assert first.semantic_bundle_sha256
     assert (output / "query-run-manifest.json").is_file()
     assert (output / "normalized/CallSites.jsonl").is_file()
     assert sum(command[1:3] == ("query", "run") for command in fake.commands) == 1
@@ -183,6 +184,22 @@ def test_query_source_change_invalidates_result_cache(tmp_path: Path) -> None:
 
     assert first.queries[0].cache_key != second.queries[0].cache_key
     assert second.queries[0].cache_status == "miss"
+
+
+def test_local_qll_change_invalidates_result_cache(tmp_path: Path) -> None:
+    database, pack, output, codeql = fixture_tree(tmp_path)
+    library = pack / "lib/Helpers.qll"
+    library.parent.mkdir()
+    library.write_text("predicate helper() { any() }\n", encoding="utf-8")
+    fake = FakeCodeQL()
+    first = run_queries(database, pack, output, codeql, runner=fake)
+    library.write_text("predicate helper() { none() }\n", encoding="utf-8")
+
+    second = run_queries(database, pack, output, codeql, runner=fake)
+
+    assert first.semantic_bundle_sha256 != second.semantic_bundle_sha256
+    assert second.queries[0].cache_status == "miss"
+    assert sum(command[1:3] == ("query", "run") for command in fake.commands) == 2
 
 
 def test_path_query_is_interpreted_as_sarif_and_preserves_thread_flow(

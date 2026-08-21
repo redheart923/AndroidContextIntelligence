@@ -28,6 +28,14 @@ def _sha256_bytes(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _canonical_bytes(value: object) -> bytes:
     return json.dumps(
         value,
@@ -137,6 +145,9 @@ class CodeQLDatabaseManifest:
     extractor_version: str
     database_fingerprint: str
     database_marker_sha256: str
+    database_content_sha256: str
+    database_content_file_count: int
+    database_content_bytes: int
     observed_java_files: int
     observed_kotlin_files: int
     repositories: tuple[RepositoryIdentity, ...]
@@ -157,29 +168,37 @@ class CodeQLDatabaseManifest:
         database_info = value.get("database_info")
         if not isinstance(database_info, dict):
             raise CodeQLDatabaseError("manifest database_info must be an object")
-        return cls(
-            schema_version=int(value["schema_version"]),
-            status=str(value["status"]),
-            cache_key=str(value["cache_key"]),
-            language=str(value["language"]),
-            source_fingerprint=str(value["source_fingerprint"]),
-            product=str(value["product"]),
-            variant=str(value["variant"]),
-            build_targets=tuple(str(item) for item in value["build_targets"]),
-            threads=int(value["threads"]),
-            ram_mb=int(value["ram_mb"]),
-            codeql_version=str(value["codeql_version"]),
-            extractor_version=str(value["extractor_version"]),
-            database_fingerprint=str(value["database_fingerprint"]),
-            database_marker_sha256=str(value["database_marker_sha256"]),
-            observed_java_files=int(value["observed_java_files"]),
-            observed_kotlin_files=int(value["observed_kotlin_files"]),
-            repositories=tuple(
-                RepositoryIdentity.from_dict(item) for item in repositories
-            ),
-            created_at=str(value["created_at"]),
-            database_info=dict(database_info),
-        )
+        try:
+            return cls(
+                schema_version=int(value["schema_version"]),
+                status=str(value["status"]),
+                cache_key=str(value["cache_key"]),
+                language=str(value["language"]),
+                source_fingerprint=str(value["source_fingerprint"]),
+                product=str(value["product"]),
+                variant=str(value["variant"]),
+                build_targets=tuple(str(item) for item in value["build_targets"]),
+                threads=int(value["threads"]),
+                ram_mb=int(value["ram_mb"]),
+                codeql_version=str(value["codeql_version"]),
+                extractor_version=str(value["extractor_version"]),
+                database_fingerprint=str(value["database_fingerprint"]),
+                database_marker_sha256=str(value["database_marker_sha256"]),
+                database_content_sha256=str(value["database_content_sha256"]),
+                database_content_file_count=int(value["database_content_file_count"]),
+                database_content_bytes=int(value["database_content_bytes"]),
+                observed_java_files=int(value["observed_java_files"]),
+                observed_kotlin_files=int(value["observed_kotlin_files"]),
+                repositories=tuple(
+                    RepositoryIdentity.from_dict(item) for item in repositories
+                ),
+                created_at=str(value["created_at"]),
+                database_info=dict(database_info),
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise CodeQLDatabaseError(
+                f"CodeQL manifest fields are invalid: {error}"
+            ) from error
 
 
 def preparation_fingerprint(request: PreparationRequest) -> str:
@@ -223,7 +242,7 @@ def manifest_preparation_fingerprint(manifest: CodeQLDatabaseManifest) -> str:
 def validate_manifest_self_consistency(
     manifest: CodeQLDatabaseManifest, *, database: Path
 ) -> None:
-    if manifest.schema_version != 2:
+    if manifest.schema_version != 3:
         raise CodeQLDatabaseError(
             f"unsupported CodeQL manifest schema: {manifest.schema_version}"
         )
@@ -250,12 +269,22 @@ def validate_manifest_self_consistency(
     marker_digest = _sha256_bytes(marker.read_bytes())
     if marker_digest != manifest.database_marker_sha256:
         raise CodeQLDatabaseError("CodeQL database marker digest mismatch")
+    content_digest, content_file_count, content_bytes = _database_content_fingerprint(
+        database
+    )
+    if content_digest != manifest.database_content_sha256:
+        raise CodeQLDatabaseError("CodeQL database content digest mismatch")
+    if content_file_count != manifest.database_content_file_count:
+        raise CodeQLDatabaseError("CodeQL database content file count mismatch")
+    if content_bytes != manifest.database_content_bytes:
+        raise CodeQLDatabaseError("CodeQL database content byte count mismatch")
     expected_database = _sha256_bytes(
         _canonical_bytes(
             {
                 "cache_key": manifest.cache_key,
                 "database_info": manifest.database_info,
                 "database_marker_sha256": marker_digest,
+                "database_content_sha256": content_digest,
             }
         )
     )
@@ -323,7 +352,7 @@ def validate_database_manifest(
     database: Path | None = None,
 ) -> None:
     expected = {
-        "schema_version": 2,
+        "schema_version": 3,
         "status": "verified",
         "language": "java-kotlin",
         "source_fingerprint": expected_request.source_fingerprint,
@@ -349,12 +378,15 @@ def validate_database_manifest(
     for field in (
         "database_fingerprint",
         "database_marker_sha256",
+        "database_content_sha256",
         "source_fingerprint",
         "cache_key",
     ):
         _require_digest(field, str(getattr(manifest, field)))
     if manifest.observed_java_files < 0 or manifest.observed_kotlin_files < 0:
         raise CodeQLDatabaseError("observed source counts must not be negative")
+    if manifest.database_content_file_count < 1 or manifest.database_content_bytes < 1:
+        raise CodeQLDatabaseError("CodeQL database content inventory is empty")
     if database is not None:
         validate_manifest_self_consistency(manifest, database=database)
 
@@ -397,6 +429,41 @@ def _observed_source_counts(database: Path) -> tuple[int, int]:
                 f"cannot inspect CodeQL source archive {archive}: {error}"
             ) from error
     return len(java), len(kotlin)
+
+
+_MUTABLE_DATABASE_COMPONENTS = {
+    "cache",
+    "log",
+    "logs",
+    "results",
+    "working",
+}
+
+
+def _database_content_fingerprint(database: Path) -> tuple[str, int, int]:
+    records: list[tuple[str, int, str]] = []
+    total_bytes = 0
+    for path in sorted(database.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(database)
+        lowered_parts = {part.lower() for part in relative.parts[:-1]}
+        if lowered_parts & _MUTABLE_DATABASE_COMPONENTS:
+            continue
+        if path.name.endswith((".lock", ".tmp")):
+            continue
+        try:
+            size = path.stat().st_size
+            digest = _sha256_file(path)
+        except OSError as error:
+            raise CodeQLDatabaseError(
+                f"cannot fingerprint CodeQL database content {path}: {error}"
+            ) from error
+        records.append((relative.as_posix(), size, digest))
+        total_bytes += size
+    if not records:
+        raise CodeQLDatabaseError("CodeQL database has no immutable content")
+    return _sha256_bytes(_canonical_bytes(records)), len(records), total_bytes
 
 
 def _run(
@@ -511,18 +578,22 @@ def prepare_database(
         if not isinstance(database_info, dict):
             raise CodeQLDatabaseError("CodeQL database info must be an object")
         marker_digest = _sha256_bytes(marker.read_bytes())
+        content_digest, content_file_count, content_bytes = (
+            _database_content_fingerprint(partial_database)
+        )
         database_fingerprint = _sha256_bytes(
             _canonical_bytes(
                 {
                     "cache_key": cache_key,
                     "database_info": database_info,
                     "database_marker_sha256": marker_digest,
+                    "database_content_sha256": content_digest,
                 }
             )
         )
         observed_java, observed_kotlin = _observed_source_counts(partial_database)
         manifest = CodeQLDatabaseManifest(
-            schema_version=2,
+            schema_version=3,
             status="verified",
             cache_key=cache_key,
             language="java-kotlin",
@@ -536,6 +607,9 @@ def prepare_database(
             extractor_version=request.extractor_version,
             database_fingerprint=database_fingerprint,
             database_marker_sha256=marker_digest,
+            database_content_sha256=content_digest,
+            database_content_file_count=content_file_count,
+            database_content_bytes=content_bytes,
             observed_java_files=observed_java,
             observed_kotlin_files=observed_kotlin,
             repositories=request.repositories,

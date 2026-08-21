@@ -142,3 +142,15 @@ def test_prepare_database_rejects_tampered_cached_marker(tmp_path: Path) -> None
 
     with pytest.raises(CodeQLDatabaseError, match="marker"):
         prepare_database(value, runner=FakeRunner())
+
+
+def test_prepare_database_rejects_tampered_extracted_content(
+    tmp_path: Path,
+) -> None:
+    value = request(tmp_path)
+    database = prepare_database(value, runner=FakeRunner())
+    (database / "db-java").mkdir()
+    (database / "db-java/relations.bin").write_bytes(b"tampered")
+
+    with pytest.raises(CodeQLDatabaseError, match="content"):
+        prepare_database(value, runner=FakeRunner())

@@ -10,6 +10,7 @@ import pytest
 from workspace.codeql_database import (
     CodeQLDatabaseManifest,
     RepositoryIdentity,
+    _database_content_fingerprint,
     manifest_preparation_fingerprint,
 )
 from workspace.codeql_import import (
@@ -45,7 +46,7 @@ def fixture(
         ).encode()
     ).hexdigest()
     manifest = CodeQLDatabaseManifest(
-        schema_version=2,
+        schema_version=3,
         status="verified",
         cache_key="0" * 64,
         language="java-kotlin",
@@ -59,6 +60,9 @@ def fixture(
         extractor_version="java-kotlin:fixture",
         database_fingerprint="0" * 64,
         database_marker_sha256="0" * 64,
+        database_content_sha256="0" * 64,
+        database_content_file_count=1,
+        database_content_bytes=1,
         observed_java_files=10,
         observed_kotlin_files=2,
         repositories=observed,
@@ -72,12 +76,16 @@ def fixture(
     marker = database / "codeql-database.yml"
     marker.write_text("primaryLanguage: java-kotlin\n", encoding="utf-8")
     marker_digest = hashlib.sha256(marker.read_bytes()).hexdigest()
+    content_digest, content_file_count, content_bytes = (
+        _database_content_fingerprint(database)
+    )
     database_fingerprint = hashlib.sha256(
         json.dumps(
             {
                 "cache_key": cache_key,
                 "database_info": manifest.database_info,
                 "database_marker_sha256": marker_digest,
+                "database_content_sha256": content_digest,
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -87,6 +95,9 @@ def fixture(
         manifest,
         cache_key=cache_key,
         database_marker_sha256=marker_digest,
+        database_content_sha256=content_digest,
+        database_content_file_count=content_file_count,
+        database_content_bytes=content_bytes,
         database_fingerprint=database_fingerprint,
     )
     (entry / "manifest.json").write_text(
@@ -160,6 +171,7 @@ def test_query_tool_identity_must_match_database_manifest(tmp_path: Path) -> Non
         schema_version=1,
         database_fingerprint=manifest.database_fingerprint,
         pack_lock_sha256="f" * 64,
+        semantic_bundle_sha256="a" * 64,
         codeql_version=manifest.codeql_version,
         extractor_version="resolve-languages:" + "e" * 64,
         created_at="2026-08-20T00:00:00+00:00",
