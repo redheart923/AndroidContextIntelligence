@@ -16,8 +16,8 @@ an incomplete AOSP checkout.
 Executed from WSL against the Git worktree on 2026-08-20:
 
 ```text
-project suite: 231 passed in 28.36s
-root suite: 57 passed in 60.42s
+project suite: 232 passed in 27.07s
+root suite: 57 passed in 59.31s
 CodeQL fixtures: 4 passed in 5m46s
 ```
 
