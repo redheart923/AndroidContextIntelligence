@@ -25,6 +25,7 @@
 - [Trustworthy Source and Installation Baseline](designs/2026-07-21-trustworthy-source-and-installation-baseline-design.md)：规范源码、薄安装器、WSL 生成物边界和可信发布基线设计。
 - [Permission Semantics Graph v0.1](designs/2026-07-21-permission-semantics-graph-v01-design.md)：权限声明、请求、privapp/default-permissions 策略以及 Java/Kotlin 检查与执行语义设计。
 - [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](designs/2026-08-20-java-kotlin-call-dataflow-graph-v01-design.md)：CodeQL 调用点、跨方法安全数据流、类型化存储、验证和 Git 纠错设计。
+- [Partial Source Workspace Profile v0.1](designs/2026-08-24-partial-source-workspace-profile-v01-design.md)：局部源码的显式 scope、通用发布门禁、能力降级、provenance 和原子发布设计；尚未实施。
 
 ## Plans
 
