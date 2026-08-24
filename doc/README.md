@@ -29,6 +29,9 @@
 
 ## Plans
 
+Partial Source Workspace Profile v0.1 is implemented and accepted; see the review record
+below for fixture, publication-integrity, and real WSL partial-source evidence.
+
 - [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](plans/2026-08-20-java-kotlin-call-dataflow-graph-v01-plan.md): CodeQL database preparation, typed semantic storage, call/dataflow/security facts, corrections, atomic publication, and real-AOSP acceptance plan.
 - [Partial Source Workspace Profile v0.1](plans/2026-08-24-partial-source-workspace-profile-v01-plan.md): scope identity, two-phase validation, provenance-bound publication, atomic failure gates, and partial-source acceptance plan.
 
@@ -42,6 +45,8 @@
 - [Trustworthy Source and Installation Baseline](plans/2026-07-21-trustworthy-source-and-installation-baseline-plan.md)：规范源码、确定性安装、漂移校验与 WSL 验收的分步实施计划。
 
 ## Reviews
+
+- [Partial Source Workspace Profile v0.1 Acceptance](reviews/2026-08-24-partial-source-workspace-v01-acceptance.md): scope gates, publication integrity, deterministic fixtures, and real WSL partial-source smoke evidence.
 
 基于代码、测试、WSL 部署和 live 数据的审查证据。
 
