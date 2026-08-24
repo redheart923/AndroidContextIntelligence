@@ -65,6 +65,37 @@ def write_scope_report(
     return value
 
 
+def bind_publication_scope_fingerprint(
+    fingerprints_path: Path,
+    scope_report_path: Path,
+) -> dict[str, object]:
+    fingerprints = _load_json(fingerprints_path)
+    scope = _load_json(scope_report_path)
+    if not isinstance(fingerprints, dict) or not isinstance(scope, dict):
+        raise SourceScopeError("invalid fingerprint or source scope payload")
+    if scope.get("fingerprint") != scope_report_fingerprint(scope):
+        raise SourceScopeError("source scope fingerprint mismatch")
+    payload = dict(fingerprints)
+    payload["publication_scope"] = scope_report_fingerprint(scope)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{fingerprints_path.name}.",
+        suffix=".tmp",
+        dir=fingerprints_path.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, ensure_ascii=False, indent=2, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, fingerprints_path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return payload
+
+
 def _enabled_repositories(plan: dict[str, object]) -> list[dict[str, object]]:
     repositories = plan.get("repositories", [])
     if not isinstance(repositories, list):
@@ -326,12 +357,22 @@ def _parser() -> argparse.ArgumentParser:
     post_import.add_argument("--provenance", type=Path, required=True)
     post_import.add_argument("--build-id", required=True)
     post_import.add_argument("--output", type=Path, required=True)
+    bind = commands.add_parser("bind-fingerprint")
+    bind.add_argument("--fingerprints", type=Path, required=True)
+    bind.add_argument("--scope-report", type=Path, required=True)
     return parser
 
 
 def main(arguments: list[str] | None = None) -> int:
     parsed = _parser().parse_args(arguments)
     try:
+        if parsed.command == "bind-fingerprint":
+            bind_publication_scope_fingerprint(
+                parsed.fingerprints,
+                parsed.scope_report,
+            )
+            print("source_scope_validation: fingerprint_bound")
+            return 0
         plan = _load_json(parsed.plan)
         if parsed.command == "preflight":
             payload = validate_preflight(plan)

@@ -12,6 +12,7 @@ from workspace.provenance import (
     provenance_fingerprint,
     validate_provenance,
 )
+from workspace.source_scope_validation import write_scope_report
 
 
 def complete_provenance() -> dict[str, object]:
@@ -195,3 +196,94 @@ def test_collect_includes_codeql_corrections_and_semantic_fingerprints(
     assert semantic["codeql_report"]["sha256"]
     assert semantic["correction_report"]["sha256"]
     assert semantic["fingerprints"]["sha256"]
+
+
+def test_collect_binds_verified_source_scope_report(tmp_path: Path) -> None:
+    repository = tmp_path / "aosp/frameworks/base"
+    repository.mkdir(parents=True)
+    (repository / "Source.java").write_text("class Source {}\n", encoding="utf-8")
+    inventory = __import__(
+        "workspace.revisions", fromlist=["inspect_repository_provenance"]
+    ).inspect_repository_provenance(repository)
+    source = tmp_path / "source.toml"
+    source.write_text("[workspace]\n", encoding="utf-8")
+    registry = tmp_path / "registry.toml"
+    registry.write_text("[parsers]\n", encoding="utf-8")
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "aosp_root": str(tmp_path / "aosp"),
+                "analysis_scope": "partial",
+                "repositories": [
+                    {
+                        "name": "frameworks/base",
+                        "path": "frameworks/base",
+                        "enabled": True,
+                        "include": [],
+                        "exclude": [],
+                        "languages": ["java"],
+                        "revision": inventory.revision,
+                        "inventory_sha256": inventory.inventory_sha256,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    scope_report = tmp_path / "source-scope-validation.json"
+    scope_payload = write_scope_report(
+        scope_report,
+        {
+            "schema_version": 1,
+            "build_id": "build-1",
+            "analysis_scope": "partial",
+            "full_aosp_coverage": False,
+            "status": "passed",
+            "enabled_repositories": [],
+            "scheduled_task_count": 1,
+            "source_backed_node_count": 1,
+            "capability_counts": {"supported": 1},
+            "validation_errors": [],
+        },
+    )
+
+    payload = collect_provenance(
+        plan,
+        source,
+        registry,
+        scope_report=scope_report,
+    )
+
+    assert payload["source_scope"]["payload"] == scope_payload
+    assert payload["source_scope"]["sha256"]
+    validate_provenance(payload, require_complete=True)
+
+
+def test_provenance_rejects_tampered_embedded_scope_payload(tmp_path: Path) -> None:
+    payload = complete_provenance()
+    scope_path = tmp_path / "scope.json"
+    scope = write_scope_report(
+        scope_path,
+        {
+            "schema_version": 1,
+            "build_id": "build-1",
+            "analysis_scope": "partial",
+            "full_aosp_coverage": False,
+            "status": "passed",
+            "enabled_repositories": [],
+            "scheduled_task_count": 1,
+            "source_backed_node_count": 1,
+            "capability_counts": {"supported": 1},
+            "validation_errors": [],
+        },
+    )
+    payload["source_scope"] = {
+        "path": str(scope_path),
+        "sha256": __import__("hashlib").sha256(scope_path.read_bytes()).hexdigest(),
+        "payload": scope,
+    }
+    payload["source_scope"]["payload"]["analysis_scope"] = "aosp"
+
+    with pytest.raises(ProvenanceError, match="source scope"):
+        validate_provenance(payload, require_complete=True)

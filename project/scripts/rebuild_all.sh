@@ -193,6 +193,7 @@ STAGED_RAW="$STAGING/raw"
 PLAN="$STAGED_WORKSPACE/execution-plan.json"
 VENDOR_MANIFEST="$STAGED_WORKSPACE/vendor-artifacts.json"
 SCOPE_REPORT="$STAGED_WORKSPACE/source-scope-validation.json"
+SOURCE_PROVENANCE="$STAGED_WORKSPACE/source-provenance.json"
 
 python -m workspace.cli \
     --config "$SOURCE_CONFIG" \
@@ -328,19 +329,39 @@ python -m workspace.provenance collect \
     --codeql-report "$CODEQL_REPORT" \
     --correction-report "$CORRECTION_REPORT" \
     --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
-    --output "$STAGED_WORKSPACE/provenance.json"
+    --output "$SOURCE_PROVENANCE"
 
 python -m workspace.provenance validate \
-    --provenance "$STAGED_WORKSPACE/provenance.json" \
+    --provenance "$SOURCE_PROVENANCE" \
     "${PROVENANCE_STRICT[@]}"
 
 python -m workspace.source_scope_validation post-import \
     --plan "$PLAN" \
     --db "$STAGED_DB" \
     --capability-report "$STAGED_WORKSPACE/capability-report.json" \
-    --provenance "$STAGED_WORKSPACE/provenance.json" \
+    --provenance "$SOURCE_PROVENANCE" \
     --build-id "$(basename "$STAGING")" \
     --output "$SCOPE_REPORT"
+
+python -m workspace.source_scope_validation bind-fingerprint \
+    --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
+    --scope-report "$SCOPE_REPORT"
+
+python -m workspace.provenance collect \
+    --plan "$PLAN" \
+    --source-config "$SOURCE_CONFIG" \
+    --local-config "$LOCAL_CONFIG" \
+    --registry "$REGISTRY" \
+    --vendor-manifest "$VENDOR_MANIFEST" \
+    --codeql-report "$CODEQL_REPORT" \
+    --correction-report "$CORRECTION_REPORT" \
+    --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
+    --scope-report "$SCOPE_REPORT" \
+    --output "$STAGED_WORKSPACE/provenance.json"
+
+python -m workspace.provenance validate \
+    --provenance "$STAGED_WORKSPACE/provenance.json" \
+    "${PROVENANCE_STRICT[@]}"
 
 FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
 if [[ -n "$FK_ERRORS" ]]; then
@@ -377,6 +398,7 @@ python -m workspace.build_publish prepare \
     --local-config "$LOCAL_CONFIG" \
     --provenance "$STAGED_WORKSPACE/provenance.json" \
     --vendor-manifest "$VENDOR_MANIFEST" \
+    --scope-report "$SCOPE_REPORT" \
     --started-at "$STARTED_AT" \
     --verified-at "$VERIFIED_AT" \
     "${HISTORY_ARGS[@]}"

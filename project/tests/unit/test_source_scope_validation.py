@@ -9,6 +9,7 @@ import pytest
 
 from workspace.source_scope_validation import (
     SourceScopeError,
+    bind_publication_scope_fingerprint,
     main,
     scope_report_fingerprint,
     validate_post_import,
@@ -310,3 +311,20 @@ def test_cli_runs_preflight_and_post_import(tmp_path: Path) -> None:
         "--output", str(report_path),
     ]) == 0
     assert json.loads(report_path.read_text())["status"] == "passed"
+
+
+def test_publication_fingerprint_binds_scope_without_changing_graph_fact(
+    tmp_path: Path,
+) -> None:
+    fingerprints = tmp_path / "semantic-fingerprints.json"
+    fingerprints.write_text(
+        json.dumps({"whole_graph": "a" * 64}),
+        encoding="utf-8",
+    )
+    scope_path = tmp_path / "scope.json"
+    scope = write_scope_report(scope_path, validate_preflight(plan_fixture()))
+
+    payload = bind_publication_scope_fingerprint(fingerprints, scope_path)
+
+    assert payload["whole_graph"] == "a" * 64
+    assert payload["publication_scope"] == scope_report_fingerprint(scope)

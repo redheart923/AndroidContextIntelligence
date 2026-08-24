@@ -14,6 +14,7 @@ from typing import Callable
 
 from graph.writer import GraphWriter, Node
 from workspace.provenance import provenance_fingerprint
+from workspace.source_scope_validation import scope_report_fingerprint
 
 
 RAW_REPORT_DIRECTORIES = (
@@ -122,11 +123,18 @@ def retain_build_history(
             shutil.copytree(codeql, history / "raw/codeql")
         if include_database:
             shutil.copy2(batch.database, history / "android_context.db")
+        build_manifest = json.loads(
+            (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
+        )
         manifest = history / "history-manifest.json"
         manifest.write_text(
             json.dumps(
                 {
                     "build_id": batch.build_id,
+                    "analysis_scope": build_manifest.get("analysis_scope"),
+                    "source_scope_sha256": build_manifest.get(
+                        "source_scope_sha256"
+                    ),
                     "database_retained": include_database,
                     "workspace_files": sorted(
                         path.relative_to(history).as_posix()
@@ -154,6 +162,38 @@ def retain_build_history(
     return history
 
 
+def _load_source_scope(
+    batch: BuildBatch,
+    scope_report: Path | None,
+    provenance_payload: dict[str, object] | None,
+) -> tuple[dict[str, object] | None, str | None]:
+    if scope_report is None:
+        return None, None
+    try:
+        payload = json.loads(scope_report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PublicationError(f"invalid source scope report: {scope_report}") from error
+    if not isinstance(payload, dict):
+        raise PublicationError("invalid source scope report payload")
+    if payload.get("fingerprint") != scope_report_fingerprint(payload):
+        raise PublicationError("source scope fingerprint mismatch")
+    if payload.get("status") != "passed":
+        raise PublicationError("source scope report is not passed")
+    if payload.get("build_id") != batch.build_id:
+        raise PublicationError(
+            "source scope build ID mismatch: "
+            f"expected {batch.build_id!r}, got {payload.get('build_id')!r}"
+        )
+    digest = hashlib.sha256(scope_report.read_bytes()).hexdigest()
+    if provenance_payload is not None:
+        identity = provenance_payload.get("source_scope")
+        if not isinstance(identity, dict):
+            raise PublicationError("provenance is missing source scope identity")
+        if identity.get("payload") != payload or identity.get("sha256") != digest:
+            raise PublicationError("source scope and provenance mismatch")
+    return payload, digest
+
+
 def record_graph_build(
     batch: BuildBatch,
     source_config: Path,
@@ -162,6 +202,7 @@ def record_graph_build(
     local_config: Path | None = None,
     provenance: Path | None = None,
     vendor_manifest: Path | None = None,
+    scope_report: Path | None = None,
 ) -> None:
     provenance_payload = (
         json.loads(provenance.read_text(encoding="utf-8"))
@@ -172,6 +213,11 @@ def record_graph_build(
         json.loads(vendor_manifest.read_text(encoding="utf-8"))
         if vendor_manifest is not None
         else None
+    )
+    scope_payload, scope_sha256 = _load_source_scope(
+        batch,
+        scope_report,
+        provenance_payload,
     )
     writer = GraphWriter(batch.database)
     try:
@@ -208,6 +254,18 @@ def record_graph_build(
                         if vendor_manifest is not None
                         else None
                     ),
+                    "analysis_scope": (
+                        scope_payload.get("analysis_scope")
+                        if scope_payload is not None
+                        else None
+                    ),
+                    "full_aosp_coverage": (
+                        bool(scope_payload.get("full_aosp_coverage", False))
+                        if scope_payload is not None
+                        else None
+                    ),
+                    "source_scope": scope_payload,
+                    "source_scope_sha256": scope_sha256,
                     "started_at": started_at,
                     "verified_at": verified_at,
                 },
@@ -226,6 +284,7 @@ def write_build_manifest(
     local_config: Path | None = None,
     provenance: Path | None = None,
     vendor_manifest: Path | None = None,
+    scope_report: Path | None = None,
 ) -> Path:
     provenance_payload = (
         json.loads(provenance.read_text(encoding="utf-8"))
@@ -236,6 +295,11 @@ def write_build_manifest(
         json.loads(vendor_manifest.read_text(encoding="utf-8"))
         if vendor_manifest is not None
         else None
+    )
+    scope_payload, scope_sha256 = _load_source_scope(
+        batch,
+        scope_report,
+        provenance_payload,
     )
     manifest = batch.workspace / "build-manifest.json"
     manifest.write_text(
@@ -268,6 +332,18 @@ def write_build_manifest(
                     if vendor_manifest is not None
                     else None
                 ),
+                "analysis_scope": (
+                    scope_payload.get("analysis_scope")
+                    if scope_payload is not None
+                    else None
+                ),
+                "full_aosp_coverage": (
+                    bool(scope_payload.get("full_aosp_coverage", False))
+                    if scope_payload is not None
+                    else None
+                ),
+                "source_scope": scope_payload,
+                "source_scope_sha256": scope_sha256,
                 "started_at": started_at,
                 "status": "verified",
                 "verified_at": verified_at,
@@ -411,6 +487,35 @@ def _validate_batch_identity(batch: BuildBatch) -> None:
             f"expected {batch.build_id!r}, database={database_build_id!r}, "
             f"manifest={manifest_build_id!r}"
         )
+    manifest_path = batch.workspace / "build-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        connection = sqlite3.connect(batch.database)
+        row = connection.execute(
+            "SELECT properties_json FROM node WHERE node_type='GRAPH_BUILD' "
+            "AND qualified_name=?",
+            (batch.build_id,),
+        ).fetchone()
+        graph_properties = json.loads(row[0]) if row else {}
+    except (OSError, json.JSONDecodeError, sqlite3.Error) as error:
+        raise PublicationError("cannot validate source scope identity") from error
+    finally:
+        if "connection" in locals():
+            connection.close()
+    scope_fields = (
+        "analysis_scope",
+        "full_aosp_coverage",
+        "source_scope",
+        "source_scope_sha256",
+    )
+    if any(
+        manifest.get(field) is not None or graph_properties.get(field) is not None
+        for field in scope_fields
+    ) and any(
+        manifest.get(field) != graph_properties.get(field)
+        for field in scope_fields
+    ):
+        raise PublicationError("source scope identity mismatch")
 
 
 def _restore_precommit_reports(
@@ -564,6 +669,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--local-config", type=Path)
     prepare.add_argument("--provenance", type=Path)
     prepare.add_argument("--vendor-manifest", type=Path)
+    prepare.add_argument("--scope-report", type=Path, required=True)
     prepare.add_argument("--started-at", required=True)
     prepare.add_argument("--verified-at", required=True)
     prepare.add_argument("--retain-history", action="store_true")
@@ -596,6 +702,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.local_config,
             arguments.provenance,
             arguments.vendor_manifest,
+            arguments.scope_report,
         )
         write_build_manifest(
             batch,
@@ -605,6 +712,7 @@ def main(argument_vector: list[str] | None = None) -> int:
             arguments.local_config,
             arguments.provenance,
             arguments.vendor_manifest,
+            arguments.scope_report,
         )
         prepare_staged_database(batch.database)
         if arguments.retain_history or arguments.retain_history_database:

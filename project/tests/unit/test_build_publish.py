@@ -24,6 +24,30 @@ from workspace.build_publish import (
     recover_publication,
     write_build_manifest,
 )
+from workspace.source_scope_validation import write_scope_report
+
+
+def create_scope_report(
+    path: Path,
+    *,
+    build_id: str = "build-1",
+    analysis_scope: str = "partial",
+) -> dict[str, object]:
+    return write_scope_report(
+        path,
+        {
+            "schema_version": 1,
+            "build_id": build_id,
+            "analysis_scope": analysis_scope,
+            "full_aosp_coverage": False,
+            "status": "passed",
+            "enabled_repositories": [],
+            "scheduled_task_count": 1,
+            "source_backed_node_count": 1,
+            "capability_counts": {"supported": 1},
+            "validation_errors": [],
+        },
+    )
 
 
 def create_full_node_schema(path: Path) -> None:
@@ -162,6 +186,14 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "artifacts": [{"artifact_sha256": "a" * 64, "status": "prepared"}],
     }
     vendor_manifest.write_text(json.dumps(vendor_payload), encoding="utf-8")
+    scope_report = tmp_path / "source-scope-validation.json"
+    scope_payload = create_scope_report(scope_report)
+    provenance_payload["source_scope"] = {
+        "path": str(scope_report.resolve()),
+        "sha256": hashlib.sha256(scope_report.read_bytes()).hexdigest(),
+        "payload": scope_payload,
+    }
+    provenance.write_text(json.dumps(provenance_payload), encoding="utf-8")
     create_full_node_schema(batch.database)
 
     record_graph_build(
@@ -172,6 +204,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         local_config,
         provenance,
         vendor_manifest,
+        scope_report,
     )
     write_build_manifest(
         batch,
@@ -181,6 +214,7 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         local_config,
         provenance,
         vendor_manifest,
+        scope_report,
     )
 
     assert read_graph_build_id(batch.database) == batch.build_id
@@ -201,6 +235,12 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         ).encode("utf-8")
     ).hexdigest()
     assert graph_properties["vendor_artifacts"] == vendor_payload
+    assert graph_properties["analysis_scope"] == "partial"
+    assert graph_properties["full_aosp_coverage"] is False
+    assert graph_properties["source_scope"] == scope_payload
+    assert graph_properties["source_scope_sha256"] == hashlib.sha256(
+        scope_report.read_bytes()
+    ).hexdigest()
     manifest = json.loads(
         (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
     )
@@ -226,6 +266,12 @@ def test_records_matching_database_and_manifest_build_ids(tmp_path: Path) -> Non
         "vendor_artifacts": vendor_payload,
         "vendor_artifacts_sha256": hashlib.sha256(
             vendor_manifest.read_bytes()
+        ).hexdigest(),
+        "analysis_scope": "partial",
+        "full_aosp_coverage": False,
+        "source_scope": scope_payload,
+        "source_scope_sha256": hashlib.sha256(
+            scope_report.read_bytes()
         ).hexdigest(),
         "started_at": "2026-07-16T15:00:00Z",
         "status": "verified",
@@ -365,6 +411,39 @@ def test_publish_rejects_mismatched_identity_before_moving_live_files(
     assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
 
 
+def test_publish_rejects_scope_mismatch_before_moving_live_files(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+    connection = sqlite3.connect(batch.database)
+    connection.execute(
+        "UPDATE node SET properties_json=? WHERE node_type='GRAPH_BUILD'",
+        (json.dumps({
+            "analysis_scope": "partial",
+            "source_scope_sha256": "a" * 64,
+        }),),
+    )
+    connection.commit()
+    connection.close()
+    manifest_path = batch.workspace / "build-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update({
+        "analysis_scope": "partial",
+        "source_scope_sha256": "b" * 64,
+    })
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(PublicationError, match="source scope identity"):
+        publish_build(batch)
+
+    assert read_graph_build_id(data / "android_context.db") == "old"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
+
+
 def simulate_reports_published(batch) -> None:
     batch.rollback_root.mkdir(parents=True)
     os.replace(batch.data_root / "workspace", batch.rollback_root / "workspace")
@@ -462,6 +541,8 @@ def test_cli_prepare_records_and_checkpoints_batch(tmp_path: Path) -> None:
     create_full_node_schema(batch.database)
     source_config = tmp_path / "source_roots.toml"
     source_config.write_text("[workspace]\n", encoding="utf-8")
+    scope_report = batch.workspace / "source-scope-validation.json"
+    create_scope_report(scope_report)
 
     assert main(
         [
@@ -470,6 +551,8 @@ def test_cli_prepare_records_and_checkpoints_batch(tmp_path: Path) -> None:
             str(batch.staging_root),
             "--source-config",
             str(source_config),
+            "--scope-report",
+            str(scope_report),
             "--started-at",
             "2026-07-16T15:00:00Z",
             "--verified-at",
@@ -482,6 +565,35 @@ def test_cli_prepare_records_and_checkpoints_batch(tmp_path: Path) -> None:
         (batch.workspace / "build-manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["build_id"] == "build-1"
+    assert manifest["analysis_scope"] == "partial"
+
+
+def test_cli_prepare_rejects_scope_report_for_different_build(
+    tmp_path: Path,
+) -> None:
+    batch = begin_build(tmp_path, build_id="build-1")
+    create_full_node_schema(batch.database)
+    source_config = tmp_path / "source_roots.toml"
+    source_config.write_text("[workspace]\n", encoding="utf-8")
+    scope_report = batch.workspace / "source-scope-validation.json"
+    create_scope_report(scope_report, build_id="different")
+
+    with pytest.raises(PublicationError, match="source scope build ID"):
+        main(
+            [
+                "prepare",
+                "--staging",
+                str(batch.staging_root),
+                "--source-config",
+                str(source_config),
+                "--scope-report",
+                str(scope_report),
+                "--started-at",
+                "2026-07-16T15:00:00Z",
+                "--verified-at",
+                "2026-07-16T15:01:00Z",
+            ]
+        )
 
 
 def test_cli_publish_commits_ready_batch(tmp_path: Path) -> None:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .revisions import inspect_repository_provenance
+from .source_scope_validation import scope_report_fingerprint
 
 
 class ProvenanceError(RuntimeError):
@@ -81,6 +82,21 @@ def _command_identity(
     }
 
 
+def _source_scope_identity(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ProvenanceError("invalid source scope payload")
+    if payload.get("fingerprint") != scope_report_fingerprint(payload):
+        raise ProvenanceError("source scope fingerprint mismatch")
+    return {
+        "path": str(path.resolve()),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "payload": payload,
+    }
+
+
 def collect_provenance(
     plan_path: Path,
     source_config: Path,
@@ -90,6 +106,7 @@ def collect_provenance(
     codeql_report: Path | None = None,
     correction_report: Path | None = None,
     fingerprints: Path | None = None,
+    scope_report: Path | None = None,
 ) -> dict[str, object]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     aosp_root = Path(str(plan["aosp_root"]))
@@ -150,6 +167,7 @@ def collect_provenance(
             "correction_report": _file_identity(correction_report),
             "fingerprints": _file_identity(fingerprints),
         },
+        "source_scope": _source_scope_identity(scope_report),
     }
     payload["fingerprint"] = provenance_fingerprint(payload)
     return payload
@@ -203,6 +221,25 @@ def validate_provenance(
             identity = tools.get(name)
             if not isinstance(identity, dict) or identity.get("status") != "available":
                 gaps.append(f"{name}:missing identity")
+    source_scope = payload.get("source_scope")
+    if source_scope is not None:
+        if not isinstance(source_scope, dict):
+            gaps.append("source scope record")
+        else:
+            scope_payload = source_scope.get("payload")
+            if not isinstance(scope_payload, dict):
+                gaps.append("source scope payload")
+            elif scope_payload.get("fingerprint") != scope_report_fingerprint(
+                scope_payload
+            ):
+                gaps.append("source scope fingerprint mismatch")
+            path_value = source_scope.get("path")
+            if path_value:
+                path = Path(str(path_value))
+                if path.is_file() and source_scope.get("sha256") != hashlib.sha256(
+                    path.read_bytes()
+                ).hexdigest():
+                    gaps.append("source scope file digest mismatch")
     if require_complete and gaps:
         raise ProvenanceError("missing provenance: " + ", ".join(gaps))
 
@@ -220,6 +257,7 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--codeql-report", type=Path)
     collect.add_argument("--correction-report", type=Path)
     collect.add_argument("--fingerprints", type=Path)
+    collect.add_argument("--scope-report", type=Path)
     validate = commands.add_parser("validate")
     validate.add_argument("--provenance", type=Path, required=True)
     validate.add_argument("--require-complete", action="store_true")
@@ -238,6 +276,7 @@ def main(arguments: list[str] | None = None) -> int:
             parsed.codeql_report,
             parsed.correction_report,
             parsed.fingerprints,
+            parsed.scope_report,
         )
         parsed.output.parent.mkdir(parents=True, exist_ok=True)
         parsed.output.write_text(
