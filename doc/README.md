@@ -30,6 +30,7 @@
 ## Plans
 
 - [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](plans/2026-08-20-java-kotlin-call-dataflow-graph-v01-plan.md): CodeQL database preparation, typed semantic storage, call/dataflow/security facts, corrections, atomic publication, and real-AOSP acceptance plan.
+- [Partial Source Workspace Profile v0.1](plans/2026-08-24-partial-source-workspace-profile-v01-plan.md): scope identity, two-phase validation, provenance-bound publication, atomic failure gates, and partial-source acceptance plan.
 
 可执行实施计划和验收记录。
 
