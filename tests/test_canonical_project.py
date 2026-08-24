@@ -21,6 +21,8 @@ def test_canonical_project_contains_complete_payload_contract() -> None:
     assert (PROJECT / "scripts/rebuild_all.sh").is_file()
     assert (PROJECT / "workspace/cli.py").is_file()
     assert (PROJECT / "graph/writer.py").is_file()
+    assert (PROJECT / "workspace/source_scope_validation.py").is_file()
+    assert (PROJECT / "queries/source_scope_summary.sql").is_file()
 
 
 def test_canonical_project_does_not_contain_runtime_or_generated_files() -> None:

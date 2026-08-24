@@ -169,3 +169,54 @@ python -m workspace.call_dataflow_validation \
 
 无 `--codeql-db` 的默认构建只保证基础图，相关能力状态为 degraded；strict 模式
 要求 verified DB、唯一身份 reconciliation、强证据与无 stale correction。
+
+## Partial Source Workspace Profile v0.1
+
+只有一个或少量源码仓库时，在本机保留的
+`config/source_roots.local.toml` 中显式声明局部分析范围：
+
+```toml
+[workspace]
+aosp_root = "/home/ts/aosp"
+analysis_scope = "partial"
+auto_discover_manifest = true
+auto_enable_discovered = false
+
+[repositories."frameworks/base"]
+enabled = true
+
+[[extra_repositories]]
+name = "vendor-system-service"
+path = "/home/ts/work/vendor-system-service"
+enabled = true
+languages = ["java", "kotlin", "aidl", "xml"]
+```
+
+`repositories` 使用 AOSP 根目录下的相对路径；`extra_repositories` 可指向任意本地
+源码仓库。先检查计划，再构建：
+
+```bash
+bash scripts/rebuild_all.sh --plan-only
+bash scripts/rebuild_all.sh
+sqlite3 -header -column data/android_context.db \
+  < queries/source_scope_summary.sql
+```
+
+成功构建会发布 `data/workspace/source-scope-validation.json`，并在查询结果中明确显示：
+
+```text
+PARTIAL SOURCE GRAPH - NOT FULL AOSP
+```
+
+该提示是数据边界，不是错误。局部图仍执行外键、符号冲突、Permission、provenance、
+Git 纠错和原子发布门禁，但不要求 LocalServices、AMS 或 PMS 等 Framework 代表证据。
+缺少 CodeQL DB 时，`call_graph` 和 `interprocedural_dataflow` 保持 degraded；若任务
+必须具备某项能力，使用：
+
+```bash
+bash scripts/rebuild_all.sh --strict-capability call_graph \
+  --codeql-db /path/to/verified/database
+```
+
+局部构建通过不代表完整 AOSP 覆盖，也不能用节点数量推断完整性。未配置
+`analysis_scope` 时仍默认为 `aosp`，保留原有严格的 Framework/AOSP 门禁。

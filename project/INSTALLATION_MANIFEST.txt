@@ -74,6 +74,13 @@ Repository-scoped symbol definitions:
   Validator: python -m workspace.symbol_collision_validation
   Query: queries/symbol_definitions.sql
 
+Partial source workspace profile:
+  Configuration: workspace.analysis_scope = "partial"
+  Validator: python -m workspace.source_scope_validation
+  Report: data/workspace/source-scope-validation.json
+  Query: queries/source_scope_summary.sql
+  Boundary: PARTIAL SOURCE GRAPH - NOT FULL AOSP
+
 Permission Semantics Graph v0.1:
   Capability: permission_semantics
   Report: data/raw/permission/permission-semantics-report.json

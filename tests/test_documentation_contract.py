@@ -119,3 +119,19 @@ def test_documentation_index_links_call_dataflow_acceptance() -> None:
 
     assert "Java/Kotlin Call and Dataflow Graph v0.1 Acceptance" in text
     assert "reviews/2026-08-20-java-kotlin-call-dataflow-v01-acceptance.md" in text
+
+
+def test_project_readme_documents_partial_source_profile() -> None:
+    text = PROJECT_README.read_text(encoding="utf-8")
+
+    for token in (
+        'analysis_scope = "partial"',
+        "extra_repositories",
+        "source-scope-validation.json",
+        "queries/source_scope_summary.sql",
+        "PARTIAL SOURCE GRAPH - NOT FULL AOSP",
+        "--strict-capability",
+        "call_graph",
+        "degraded",
+    ):
+        assert token in text
