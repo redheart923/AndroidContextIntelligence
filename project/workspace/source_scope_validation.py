@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -306,3 +307,49 @@ def validate_post_import(
         "capability_counts": dict(sorted(counts.items())),
         "validation_errors": [],
     }
+
+
+def _load_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Validate source workspace scope")
+    commands = parser.add_subparsers(dest="command", required=True)
+    preflight = commands.add_parser("preflight")
+    preflight.add_argument("--plan", type=Path, required=True)
+    preflight.add_argument("--output", type=Path, required=True)
+    post_import = commands.add_parser("post-import")
+    post_import.add_argument("--plan", type=Path, required=True)
+    post_import.add_argument("--db", type=Path, required=True)
+    post_import.add_argument("--capability-report", type=Path, required=True)
+    post_import.add_argument("--provenance", type=Path, required=True)
+    post_import.add_argument("--build-id", required=True)
+    post_import.add_argument("--output", type=Path, required=True)
+    return parser
+
+
+def main(arguments: list[str] | None = None) -> int:
+    parsed = _parser().parse_args(arguments)
+    try:
+        plan = _load_json(parsed.plan)
+        if parsed.command == "preflight":
+            payload = validate_preflight(plan)
+        else:
+            payload = validate_post_import(
+                plan,
+                parsed.db,
+                _load_json(parsed.capability_report),
+                _load_json(parsed.provenance),
+                parsed.build_id,
+            )
+        write_scope_report(parsed.output, payload)
+    except (OSError, json.JSONDecodeError, SourceScopeError) as error:
+        print(f"ERROR: {error}")
+        return 1
+    print(f"source_scope_validation: {payload['status']}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

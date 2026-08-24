@@ -192,6 +192,7 @@ STAGED_WORKSPACE="$STAGING/workspace"
 STAGED_RAW="$STAGING/raw"
 PLAN="$STAGED_WORKSPACE/execution-plan.json"
 VENDOR_MANIFEST="$STAGED_WORKSPACE/vendor-artifacts.json"
+SCOPE_REPORT="$STAGED_WORKSPACE/source-scope-validation.json"
 
 python -m workspace.cli \
     --config "$SOURCE_CONFIG" \
@@ -199,6 +200,10 @@ python -m workspace.cli \
     --registry "$REGISTRY" \
     --out-dir "$STAGED_WORKSPACE" \
     "${STRICT[@]}"
+
+python -m workspace.source_scope_validation preflight \
+    --plan "$PLAN" \
+    --output "$SCOPE_REPORT"
 
 sqlite3 "$STAGED_DB" < "$PROJECT_ROOT/storage/schema.sql"
 
@@ -329,6 +334,14 @@ python -m workspace.provenance validate \
     --provenance "$STAGED_WORKSPACE/provenance.json" \
     "${PROVENANCE_STRICT[@]}"
 
+python -m workspace.source_scope_validation post-import \
+    --plan "$PLAN" \
+    --db "$STAGED_DB" \
+    --capability-report "$STAGED_WORKSPACE/capability-report.json" \
+    --provenance "$STAGED_WORKSPACE/provenance.json" \
+    --build-id "$(basename "$STAGING")" \
+    --output "$SCOPE_REPORT"
+
 FK_ERRORS="$(sqlite3 "$STAGED_DB" 'PRAGMA foreign_key_check;')"
 if [[ -n "$FK_ERRORS" ]]; then
     printf '%s\n' "$FK_ERRORS" >&2
@@ -336,18 +349,19 @@ if [[ -n "$FK_ERRORS" ]]; then
 fi
 printf 'foreign_key_check: PASS\n'
 
-LOCAL_SERVICE_COUNT="$(
-    sqlite3 "$STAGED_DB" \
-        "SELECT COUNT(*) FROM edge WHERE edge_type='EXPOSED_AS_LOCAL_SERVICE';"
+ANALYSIS_SCOPE="$(
+    python -c \
+        'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["analysis_scope"])' \
+        "$SCOPE_REPORT"
 )"
-[[ "$LOCAL_SERVICE_COUNT" -ge 1 ]] || die "LocalServices validation failed"
-
-[[ -f "$PROJECT_ROOT/queries/ams_service_chain.sql" ]] &&
-    sqlite3 -header -column "$STAGED_DB" \
-        < "$PROJECT_ROOT/queries/ams_service_chain.sql"
-[[ -f "$PROJECT_ROOT/queries/pms_service_chain.sql" ]] &&
-    sqlite3 -header -column "$STAGED_DB" \
-        < "$PROJECT_ROOT/queries/pms_service_chain.sql"
+if [[ "$ANALYSIS_SCOPE" == "aosp" ]]; then
+    [[ -f "$PROJECT_ROOT/queries/ams_service_chain.sql" ]] &&
+        sqlite3 -header -column "$STAGED_DB" \
+            < "$PROJECT_ROOT/queries/ams_service_chain.sql"
+    [[ -f "$PROJECT_ROOT/queries/pms_service_chain.sql" ]] &&
+        sqlite3 -header -column "$STAGED_DB" \
+            < "$PROJECT_ROOT/queries/pms_service_chain.sql"
+fi
 
 VERIFIED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 HISTORY_ARGS=()

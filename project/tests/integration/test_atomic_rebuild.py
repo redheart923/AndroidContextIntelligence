@@ -60,6 +60,16 @@ def test_canonical_rebuild_declares_atomic_staging_contract() -> None:
     assert script.index("workspace.schema_migrations") < script.index(
         "workspace.pipeline java"
     )
+    assert script.index("source_scope_validation preflight") < script.index(
+        'sqlite3 "$STAGED_DB" <'
+    )
+    assert script.index("workspace.coverage_validation") < script.index(
+        "source_scope_validation post-import"
+    )
+    assert script.index("source_scope_validation post-import") < script.index(
+        "workspace.build_publish prepare"
+    )
+    assert "LOCAL_SERVICE_COUNT=" not in script
 
 
 SCHEMA = """
@@ -104,6 +114,7 @@ CLI_STUB = r'''from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from workspace.revisions import inspect_repository_provenance
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True)
@@ -114,16 +125,35 @@ parser.add_argument("--strict", action="store_true")
 parser.add_argument("--strict-capability")
 args = parser.parse_args()
 args.out_dir.mkdir(parents=True, exist_ok=True)
+repository = inspect_repository_provenance(Path("fixture-src"))
 (args.out_dir / "execution-plan.json").write_text(
     json.dumps(
         {
             "aosp_root": ".",
+            "analysis_scope": "aosp",
+            "full_aosp_coverage": False,
             "default_exclude": [],
-            "repositories": [],
+            "strict": bool(args.strict or args.strict_capability),
+            "strict_capability": args.strict_capability,
+            "repositories": [
+                {
+                    "name": "fixture",
+                    "path": "fixture-src",
+                    "enabled": True,
+                    "status": "available",
+                    "revision": repository.revision,
+                    "revision_state": repository.state,
+                    "inventory_sha256": repository.inventory_sha256,
+                    "inventory_file_count": repository.file_count,
+                }
+            ],
+            "inventories": [
+                {"repository": "fixture", "counts": {"java": 1}}
+            ],
             "tasks": [
                 {
                     "repository": "fixture",
-                    "repository_path": ".",
+                    "repository_path": "fixture-src",
                     "language": "java",
                     "capability": "call_graph",
                     "parser": "codeql_java_kotlin_importer",
@@ -134,7 +164,7 @@ args.out_dir.mkdir(parents=True, exist_ok=True)
                 },
                 {
                     "repository": "fixture",
-                    "repository_path": ".",
+                    "repository_path": "fixture-src",
                     "language": "java",
                     "capability": "interprocedural_dataflow",
                     "parser": "codeql_java_kotlin_importer",
@@ -180,6 +210,8 @@ if args.command == "annotate":
         node_type="JAVA_CLASS",
         qualified_name="fixture.LocalService",
         display_name="LocalService",
+        properties={"repository": "fixture"},
+        source_path="fixture-src/Demo.java",
         extractor="fixture",
     ))
     writer.upsert_node(Node(
@@ -189,12 +221,13 @@ if args.command == "annotate":
         display_name="LocalKey",
         extractor="fixture",
     ))
-    writer.upsert_edge(Edge(
-        edge_type="EXPOSED_AS_LOCAL_SERVICE",
-        from_node_id="JAVA_CLASS:fixture.LocalService",
-        to_node_id="LOCAL_SERVICE_KEY:fixture.LocalKey",
-        extractor="fixture",
-    ))
+    if os.environ.get("SKIP_LOCAL_SERVICE") != "1":
+        writer.upsert_edge(Edge(
+            edge_type="EXPOSED_AS_LOCAL_SERVICE",
+            from_node_id="JAVA_CLASS:fixture.LocalService",
+            to_node_id="LOCAL_SERVICE_KEY:fixture.LocalKey",
+            extractor="fixture",
+        ))
     writer.close()
 '''
 
@@ -301,6 +334,7 @@ def project(tmp_path: Path) -> Path:
         pytest.skip("atomic rebuild integration requires bash and flock")
     root = tmp_path / "project"
     root.mkdir()
+    _write(root / "fixture-src/Demo.java", "class Demo {}\n")
     shutil.copytree(SNAPSHOT_ROOT / "workspace", root / "workspace")
     shutil.copytree(SNAPSHOT_ROOT / "graph", root / "graph")
     shutil.copytree(SNAPSHOT_ROOT / "collectors", root / "collectors")
@@ -485,6 +519,76 @@ def test_successful_publication_exposes_matching_build_ids(project: Path) -> Non
     assert manifest["build_id"] == database_build_id
     assert (project / "data/workspace/marker.txt").read_text() == "new"
     assert (project / "data/raw/ctags/marker.txt").read_text() == "new"
+
+
+def test_partial_scope_publishes_without_local_services(project: Path) -> None:
+    cli = project / "workspace/cli.py"
+    cli.write_text(
+        cli.read_text(encoding="utf-8").replace(
+            '"analysis_scope": "aosp"',
+            '"analysis_scope": "partial"',
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(project, SKIP_LOCAL_SERVICE="1")
+
+    assert result.returncode == 0, result.stderr
+    scope = json.loads(
+        (project / "data/workspace/source-scope-validation.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert scope["analysis_scope"] == "partial"
+    assert scope["status"] == "passed"
+    assert scope["source_backed_node_count"] > 0
+    connection = sqlite3.connect(project / "data/android_context.db")
+    local_services = connection.execute(
+        "SELECT COUNT(*) FROM edge WHERE edge_type='EXPOSED_AS_LOCAL_SERVICE'"
+    ).fetchone()[0]
+    connection.close()
+    assert local_services == 0
+
+
+def test_missing_partial_repository_fails_preflight_and_preserves_live(
+    project: Path,
+) -> None:
+    database = project / "data/android_context.db"
+    before = _checksum(database)
+    cli = project / "workspace/cli.py"
+    cli.write_text(
+        cli.read_text(encoding="utf-8")
+        .replace('"analysis_scope": "aosp"', '"analysis_scope": "partial"')
+        .replace('"status": "available"', '"status": "missing"'),
+        encoding="utf-8",
+    )
+
+    result = _run(project)
+
+    assert result.returncode != 0
+    assert "missing_enabled_repository" in result.stdout
+    assert _checksum(database) == before
+
+
+def test_partial_strict_call_graph_requires_codeql_and_preserves_live(
+    project: Path,
+) -> None:
+    database = project / "data/android_context.db"
+    before = _checksum(database)
+    cli = project / "workspace/cli.py"
+    cli.write_text(
+        cli.read_text(encoding="utf-8").replace(
+            '"analysis_scope": "aosp"',
+            '"analysis_scope": "partial"',
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run(project, "--strict-capability", "call_graph")
+
+    assert result.returncode != 0
+    assert "strict call/dataflow capability requires --codeql-db" in result.stderr
+    assert _checksum(database) == before
 
 
 def test_successful_vendor_fixture_build_publishes_artifact_provenance(

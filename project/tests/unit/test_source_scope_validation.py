@@ -9,6 +9,7 @@ import pytest
 
 from workspace.source_scope_validation import (
     SourceScopeError,
+    main,
     scope_report_fingerprint,
     validate_post_import,
     validate_preflight,
@@ -282,3 +283,30 @@ def test_scope_report_is_deterministic_and_written_atomically(tmp_path: Path) ->
 
     assert written == loaded
     assert loaded["fingerprint"] == scope_report_fingerprint(loaded)
+
+
+def test_cli_runs_preflight_and_post_import(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    capability_path = tmp_path / "capability.json"
+    provenance_path = tmp_path / "provenance.json"
+    report_path = tmp_path / "scope.json"
+    database = graph_database(tmp_path)
+    plan_path.write_text(json.dumps(plan_fixture()), encoding="utf-8")
+    capability_path.write_text(json.dumps(capability_report()), encoding="utf-8")
+    provenance_path.write_text(json.dumps(provenance_fixture()), encoding="utf-8")
+
+    assert main([
+        "preflight", "--plan", str(plan_path), "--output", str(report_path)
+    ]) == 0
+    assert json.loads(report_path.read_text())["status"] == "preflight_passed"
+
+    assert main([
+        "post-import",
+        "--plan", str(plan_path),
+        "--db", str(database),
+        "--capability-report", str(capability_path),
+        "--provenance", str(provenance_path),
+        "--build-id", "fixture-build",
+        "--output", str(report_path),
+    ]) == 0
+    assert json.loads(report_path.read_text())["status"] == "passed"
