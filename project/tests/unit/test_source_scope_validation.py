@@ -328,3 +328,12 @@ def test_publication_fingerprint_binds_scope_without_changing_graph_fact(
 
     assert payload["whole_graph"] == "a" * 64
     assert payload["publication_scope"] == scope_report_fingerprint(scope)
+
+
+def test_scope_semantic_fingerprint_ignores_build_identity() -> None:
+    first = validate_preflight(plan_fixture())
+    first["build_id"] = "build-one"
+    second = deepcopy(first)
+    second["build_id"] = "build-two"
+
+    assert scope_report_fingerprint(first) == scope_report_fingerprint(second)

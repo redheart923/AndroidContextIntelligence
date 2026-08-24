@@ -32,9 +32,11 @@ def _canonical_bytes(value: object) -> bytes:
 
 def scope_report_fingerprint(payload: object) -> str:
     value = payload
-    if isinstance(payload, dict) and "fingerprint" in payload:
+    if isinstance(payload, dict):
         value = {
-            key: item for key, item in payload.items() if key != "fingerprint"
+            key: item
+            for key, item in payload.items()
+            if key not in {"fingerprint", "build_id"}
         }
     return hashlib.sha256(_canonical_bytes(value)).hexdigest()
 

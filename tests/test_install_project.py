@@ -121,16 +121,24 @@ def test_upgrade_preserves_runtime_and_local_configuration(tmp_path: Path) -> No
     assert run_cli("--fresh", "--source", str(source_v1), "--target", str(target)).returncode == 0
     write(target, "data/runtime.db", "database\n")
     write(target, ".venv/marker", "environment\n")
-    write(
-        target,
-        "config/source_roots.local.toml",
-        """
+    local_config = """
 [workspace]
 aosp_root = "/local/aosp"
+analysis_scope = "partial"
 [repositories."frameworks/base"]
 enabled = false
 include = ["local-root"]
-""",
+
+[[extra_repositories]]
+name = "vendor-system-service"
+path = "/local/vendor-system-service"
+enabled = true
+languages = ["java", "kotlin", "aidl", "xml"]
+"""
+    write(
+        target,
+        "config/source_roots.local.toml",
+        local_config,
     )
     write(target, "configs/local.yaml", "local: true\n")
     write(target, "workspace/obsolete.py", "obsolete\n")
@@ -150,9 +158,9 @@ include = ["local-root"]
     assert not (target / "workspace/obsolete.py").exists()
     assert (target / "data/runtime.db").read_text(encoding="utf-8") == "database\n"
     assert (target / ".venv/marker").read_text(encoding="utf-8") == "environment\n"
-    assert "local-root" in (
+    assert (
         target / "config/source_roots.local.toml"
-    ).read_text(encoding="utf-8")
+    ).read_text(encoding="utf-8") == local_config
     assert '"v2"' in (
         target / "config/source_roots.default.toml"
     ).read_text(encoding="utf-8")
