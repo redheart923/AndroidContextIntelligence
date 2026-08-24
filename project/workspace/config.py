@@ -76,6 +76,11 @@ def load_workspace_config(
     defaults = data.get("defaults", {})
     if not workspace.get("aosp_root"):
         raise ValueError("workspace.aosp_root is required")
+    analysis_scope = workspace.get("analysis_scope", "aosp")
+    if analysis_scope not in {"aosp", "partial"}:
+        raise ValueError(
+            "workspace.analysis_scope must be exactly 'aosp' or 'partial'"
+        )
     repositories: dict[str, RepositoryOverride] = {}
     for repo_path, item in data.get("repositories", {}).items():
         repositories[repo_path] = RepositoryOverride(
@@ -91,6 +96,7 @@ def load_workspace_config(
         for item in data.get("extra_repositories", []))
     return WorkspaceConfig(
         aosp_root=Path(workspace["aosp_root"]),
+        analysis_scope=analysis_scope,
         auto_discover_manifest=bool(workspace.get("auto_discover_manifest", True)),
         auto_enable_discovered=bool(workspace.get("auto_enable_discovered", False)),
         strict=bool(workspace.get("strict", False)),

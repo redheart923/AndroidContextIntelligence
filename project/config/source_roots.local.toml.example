@@ -2,6 +2,7 @@
 # The local file is preserved during upgrades and excluded from payload hashes.
 [workspace]
 aosp_root = "/home/ts/aosp"
+# analysis_scope = "partial"
 
 # [repositories."packages/modules/Permission"]
 # enabled = true

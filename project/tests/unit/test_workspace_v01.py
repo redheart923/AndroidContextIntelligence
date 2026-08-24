@@ -9,6 +9,71 @@ from workspace.registry import load_parser_registry
 from workspace.planner import CoverageError, build_workspace_plan
 
 
+def _scope_fixture(tmp_path: Path, scope_line: str = "") -> tuple[Path, Path]:
+    aosp = tmp_path / "aosp"
+    repository = aosp / "demo/repo"
+    repository.mkdir(parents=True)
+    (repository / "Demo.java").write_text("class Demo {}\n", encoding="utf-8")
+    config = tmp_path / "roots.toml"
+    config.write_text(
+        f'''[workspace]
+aosp_root = "{aosp.as_posix()}"
+auto_discover_manifest = false
+{scope_line}
+
+[repositories."demo/repo"]
+enabled = true
+''',
+        encoding="utf-8",
+    )
+    registry = tmp_path / "registry.toml"
+    registry.write_text(
+        '''[parsers.java]
+implementation = "java_symbol_importer"
+enabled = true
+capabilities = ["symbols"]
+''',
+        encoding="utf-8",
+    )
+    return config, registry
+
+
+def test_analysis_scope_defaults_to_aosp(tmp_path: Path) -> None:
+    config, registry = _scope_fixture(tmp_path)
+
+    loaded = load_workspace_config(config)
+    payload = build_workspace_plan(config, registry).to_dict()
+
+    assert loaded.analysis_scope == "aosp"
+    assert payload["analysis_scope"] == "aosp"
+    assert payload["full_aosp_coverage"] is False
+
+
+def test_partial_scope_round_trips_through_plan(tmp_path: Path) -> None:
+    config, registry = _scope_fixture(
+        tmp_path,
+        'analysis_scope = "partial"',
+    )
+
+    loaded = load_workspace_config(config)
+    payload = build_workspace_plan(config, registry).to_dict()
+
+    assert loaded.analysis_scope == "partial"
+    assert payload["analysis_scope"] == "partial"
+    assert payload["full_aosp_coverage"] is False
+
+
+@pytest.mark.parametrize("value", ["", "AOSP", "full", "vendor"])
+def test_unknown_analysis_scope_is_rejected(tmp_path: Path, value: str) -> None:
+    config, _ = _scope_fixture(
+        tmp_path,
+        f'analysis_scope = "{value}"',
+    )
+
+    with pytest.raises(ValueError, match="workspace.analysis_scope"):
+        load_workspace_config(config)
+
+
 def test_toml_supports_slash_names_and_extra_repository(tmp_path: Path) -> None:
     config = tmp_path / "roots.toml"
     config.write_text('''

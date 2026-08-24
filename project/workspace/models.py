@@ -1,7 +1,10 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+
+AnalysisScope = Literal["aosp", "partial"]
 
 
 @dataclass(frozen=True)
@@ -27,6 +30,7 @@ class ExtraRepository:
 @dataclass(frozen=True)
 class WorkspaceConfig:
     aosp_root: Path
+    analysis_scope: AnalysisScope = "aosp"
     auto_discover_manifest: bool = True
     auto_enable_discovered: bool = False
     strict: bool = False
@@ -140,12 +144,16 @@ class WorkspacePlan:
     repositories: tuple[RepositorySpec, ...]
     inventories: tuple[LanguageInventory, ...]
     tasks: tuple[PlanTask, ...]
+    analysis_scope: AnalysisScope = "aosp"
+    full_aosp_coverage: bool = False
     default_exclude: tuple[str, ...] = ()
     strict: bool = False
     strict_capability: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {"aosp_root": self.aosp_root,
+                "analysis_scope": self.analysis_scope,
+                "full_aosp_coverage": self.full_aosp_coverage,
                 "default_exclude": list(self.default_exclude),
                 "strict": self.strict,
                 "strict_capability": self.strict_capability,

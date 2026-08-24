@@ -1,5 +1,6 @@
 [workspace]
 aosp_root = "/home/ts/aosp"
+analysis_scope = "aosp"
 auto_discover_manifest = true
 auto_enable_discovered = false
 strict = false

@@ -88,6 +88,8 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
         raise CoverageError(f"workspace coverage gaps: {sample}")
     return WorkspacePlan(
         aosp_root=str(config.aosp_root),
+        analysis_scope=config.analysis_scope,
+        full_aosp_coverage=False,
         repositories=tuple(normalized),
         inventories=tuple(inventories),
         tasks=tuple(tasks),
