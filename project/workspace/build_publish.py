@@ -516,6 +516,20 @@ def _validate_batch_identity(batch: BuildBatch) -> None:
         for field in scope_fields
     ):
         raise PublicationError("source scope identity mismatch")
+    scope = manifest.get("source_scope")
+    if scope is not None:
+        if not isinstance(scope, dict):
+            raise PublicationError("source scope report payload is invalid")
+        if scope.get("fingerprint") != scope_report_fingerprint(scope):
+            raise PublicationError("source scope report fingerprint mismatch")
+        if scope.get("status") != "passed" or scope.get("build_id") != batch.build_id:
+            raise PublicationError("source scope report identity is invalid")
+        scope_report = batch.workspace / "source-scope-validation.json"
+        if not scope_report.is_file():
+            raise PublicationError("source scope report is missing")
+        digest = hashlib.sha256(scope_report.read_bytes()).hexdigest()
+        if digest != manifest.get("source_scope_sha256"):
+            raise PublicationError("source scope report digest mismatch")
 
 
 def _restore_precommit_reports(

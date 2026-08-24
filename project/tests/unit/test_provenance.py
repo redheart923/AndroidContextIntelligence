@@ -287,3 +287,46 @@ def test_provenance_rejects_tampered_embedded_scope_payload(tmp_path: Path) -> N
 
     with pytest.raises(ProvenanceError, match="source scope"):
         validate_provenance(payload, require_complete=True)
+
+
+def test_published_provenance_revalidates_relocated_scope_file(
+    tmp_path: Path,
+) -> None:
+    staged_workspace = tmp_path / "staging/build-1/workspace"
+    staged_workspace.mkdir(parents=True)
+    staged_scope = staged_workspace / "source-scope-validation.json"
+    scope = write_scope_report(
+        staged_scope,
+        {
+            "schema_version": 1,
+            "build_id": "build-1",
+            "analysis_scope": "partial",
+            "full_aosp_coverage": False,
+            "status": "passed",
+            "enabled_repositories": [],
+            "scheduled_task_count": 1,
+            "source_backed_node_count": 1,
+            "capability_counts": {"supported": 1},
+            "validation_errors": [],
+        },
+    )
+    payload = complete_provenance()
+    payload["source_scope"] = {
+        "path": str(staged_scope.resolve()),
+        "sha256": __import__("hashlib").sha256(staged_scope.read_bytes()).hexdigest(),
+        "payload": scope,
+    }
+
+    published_workspace = tmp_path / "data/workspace"
+    published_workspace.mkdir(parents=True)
+    published_scope = published_workspace / staged_scope.name
+    published_scope.write_bytes(staged_scope.read_bytes())
+    staged_scope.unlink()
+    published_scope.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(ProvenanceError, match="source scope file digest"):
+        validate_provenance(
+            payload,
+            require_complete=True,
+            report_directory=published_workspace,
+        )

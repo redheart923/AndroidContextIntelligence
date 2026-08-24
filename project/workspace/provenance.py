@@ -177,6 +177,7 @@ def validate_provenance(
     payload: dict[str, object],
     *,
     require_complete: bool = False,
+    report_directory: Path | None = None,
 ) -> None:
     gaps: list[str] = []
     fingerprint = payload.get("fingerprint")
@@ -236,7 +237,11 @@ def validate_provenance(
             path_value = source_scope.get("path")
             if path_value:
                 path = Path(str(path_value))
-                if path.is_file() and source_scope.get("sha256") != hashlib.sha256(
+                if not path.is_file() and report_directory is not None:
+                    path = report_directory / path.name
+                if not path.is_file():
+                    gaps.append("source scope file missing")
+                elif source_scope.get("sha256") != hashlib.sha256(
                     path.read_bytes()
                 ).hexdigest():
                     gaps.append("source scope file digest mismatch")
@@ -286,7 +291,11 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
     if parsed.command == "validate":
         payload = json.loads(parsed.provenance.read_text(encoding="utf-8"))
-        validate_provenance(payload, require_complete=parsed.require_complete)
+        validate_provenance(
+            payload,
+            require_complete=parsed.require_complete,
+            report_directory=parsed.provenance.parent,
+        )
         return 0
     raise AssertionError(f"unhandled command: {parsed.command}")
 

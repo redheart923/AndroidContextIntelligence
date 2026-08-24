@@ -444,6 +444,49 @@ def test_publish_rejects_scope_mismatch_before_moving_live_files(
     assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
 
 
+def test_publish_rejects_tampered_scope_report_before_moving_live_files(
+    tmp_path: Path,
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    seed_database(data / "android_context.db", "old")
+    seed_reports(data, "old")
+    batch = ready_batch(data)
+    scope_path = batch.workspace / "source-scope-validation.json"
+    scope = create_scope_report(scope_path, build_id=batch.build_id)
+    scope_sha256 = hashlib.sha256(scope_path.read_bytes()).hexdigest()
+    manifest_path = batch.workspace / "build-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest.update(
+        {
+            "analysis_scope": "partial",
+            "full_aosp_coverage": False,
+            "source_scope": scope,
+            "source_scope_sha256": scope_sha256,
+        }
+    )
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    connection = sqlite3.connect(batch.database)
+    connection.execute(
+        "UPDATE node SET properties_json=? WHERE node_type='GRAPH_BUILD'",
+        (json.dumps({
+            "analysis_scope": "partial",
+            "full_aosp_coverage": False,
+            "source_scope": scope,
+            "source_scope_sha256": scope_sha256,
+        }),),
+    )
+    connection.commit()
+    connection.close()
+    scope_path.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(PublicationError, match="source scope report"):
+        publish_build(batch)
+
+    assert read_graph_build_id(data / "android_context.db") == "old"
+    assert (data / "workspace/marker.txt").read_text(encoding="utf-8") == "old"
+
+
 def simulate_reports_published(batch) -> None:
     batch.rollback_root.mkdir(parents=True)
     os.replace(batch.data_root / "workspace", batch.rollback_root / "workspace")
