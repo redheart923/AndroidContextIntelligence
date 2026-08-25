@@ -1,0 +1,7 @@
+{"_type":"tag","name":"android","path":"frameworks/native/demo/Foo.h","line":3,"end":9,"kind":"namespace","language":"C++"}
+{"_type":"tag","name":"Foo","path":"frameworks/native/demo/Foo.h","line":4,"end":8,"kind":"class","language":"C++","scope":"android::demo","scopeKind":"namespace"}
+{"_type":"tag","name":"run","path":"frameworks/native/demo/Foo.cpp","line":4,"end":6,"kind":"method","language":"C++","scope":"android::demo::Foo","scopeKind":"class","signature":"(int value)","typeref":"typename:int"}
+{"_type":"tag","name":"parse","path":"frameworks/native/demo/Foo.cpp","line":8,"end":10,"kind":"function","language":"C++","scope":"android::demo","scopeKind":"namespace","signature":"(int value)","typeref":"typename:int"}
+{"_type":"tag","name":"parse","path":"frameworks/native/demo/Foo.cpp","line":12,"end":14,"kind":"function","language":"C++","scope":"android::demo","scopeKind":"namespace","signature":"(const char * value)","typeref":"typename:int"}
+{"_type":"tag","name":"DEMO_FLAG","path":"frameworks/native/demo/demo.c","line":1,"kind":"macro","language":"C"}
+{"_type":"tag","name":"demo_start","path":"frameworks/native/demo/demo.c","line":3,"end":5,"kind":"function","language":"C","signature":"(int value)","typeref":"typename:int"}
