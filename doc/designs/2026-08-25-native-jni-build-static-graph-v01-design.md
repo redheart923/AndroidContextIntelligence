@@ -102,6 +102,8 @@ extractor_version
 evidence_kind
 source_revision
 content_fingerprint
+platform_identity
+semantic_profile_version
 properties
 ```
 
@@ -336,9 +338,82 @@ bash scripts/rebuild_all.sh --plan-only
 
 `--strict-capability` 改为可重复参数并保持单次调用兼容。安装和 WSL 部署继续使用根目录 `setup.sh`；不新增永久性的 patch/install shell 作为唯一源码。
 
-## 12. 验证门禁
+## 12. Android 大版本与源码架构升级兼容
 
-### 12.1 通用门禁
+Android Context Intelligence 不把 `Android 15`、`Android 16` 等市场版本名称作为图谱事实身份。可靠身份由以下内容共同决定：
+
+```text
+enabled repository set
+每个仓库 revision/dirty state
+source inventory fingerprint
+可选构建产物 fingerprint
+parser/grammar/tool identity
+semantic profile version
+```
+
+`platform_identity` 是用于比较和展示的元数据。存在完整源码时，可从平台版本文件和 build metadata 提取；部分源码缺失时允许由 local config 显式提供或记为 unknown。unknown 不阻断与 Android 版本无关的源码事实，但不能通过要求具体平台身份的 strict gate。
+
+解析器采用 capability detection，而不是仅根据 Android 大版本切换逻辑：
+
+- Blueprint parser 先按语法解析，未知 module type/property 原样保留并报告，不因版本未知而丢弃整个文件；
+- Soong semantic profile 对已知属性提供版本化解释，未知或改变语义的属性进入 unresolved；
+- JNI linker 依据实际声明、descriptor 和注册证据，不依赖固定目录或固定 Framework 类名；
+- C/C++/Rust 符号身份依据源码结构，不依赖仓库在某个 Android 版本中的历史位置；
+- Ninja 和其他生成型输入必须与 repository revision set 匹配，不允许复用其他版本的构建产物。
+
+每个 semantic profile 使用独立版本，例如：
+
+```text
+native-symbols/v1
+soong-static/v1
+jni-linker/v1
+ninja-build/v1
+```
+
+以下变化必须使缓存失效并触发重新解析：
+
+```text
+源码 revision 或 dirty content 改变
+仓库集合或 include/exclude 改变
+Android.bp/build artifact 内容改变
+Tree-sitter grammar/Ctags/解析器版本改变
+semantic profile version 改变
+correction 集合改变
+```
+
+升级后系统可能继续正常发布三种状态：
+
+```text
+supported  已知语义且验证通过
+degraded   基础事实可用，但出现未知语法、缺失仓库或缺失构建输入
+unsupported 当前没有对应解析器能力
+```
+
+任何未知新结构都不得被旧规则静默解释为确定事实。non-strict 模式保留可验证事实并明确 degraded；对应 strict capability 必须失败并保留旧 live DB。因此“大版本升级后命令能运行”不等于“所有新语义已覆盖”。
+
+跨版本回归使用三类 fixture：
+
+```text
+legacy-known       已知旧版 Blueprint/JNI/Rust 写法
+current-known      当前支持的写法
+future-unknown     人工构造的新 module/property/registration 结构
+```
+
+`future-unknown` 必须验证未知结构被保存、诊断和降级，而不是误生成 active edge。真实 Android 升级验收还需保存升级前后的不可变 graph snapshot，并使用 `graph_diff.py` 区分：
+
+```text
+真实源码/架构变化
+仓库移动或符号重命名
+解析器覆盖变化
+构建产物变化
+correction 变化
+```
+
+旧数据库通过 schema migration 保持可读；新语义通过新增 node/edge type、properties 和 profile 版本演进，不修改已有事实含义。若必须改变既有语义，必须新增 profile/version 和迁移验证，不能原地重新解释历史图。
+
+## 13. 验证门禁
+
+### 13.1 通用门禁
 
 - typed fact schema、source range 和 fingerprint；
 - stable identity 与 deterministic output；
@@ -348,20 +423,23 @@ bash scripts/rebuild_all.sh --plan-only
 - parser 失败不得发布 supported；
 - graph fingerprint 可重复；
 - staging 失败保留旧 live DB。
+- Android/platform identity 与 build input revision 一致；
+- semantic profile 和 parser identity 参与缓存及 provenance；
+- unknown future syntax 只能产生诊断、unresolved 或 candidate。
 
-### 12.2 JNI 门禁
+### 13.2 JNI 门禁
 
 有效 `JNI_BINDS_TO` 必须来自显式注册、可逆的标准 JNI 名称、唯一短名称或有效 correction。显式注册需验证托管类、方法、descriptor、native function、registration array 和注册调用关联。重载短名称、descriptor 不匹配、复杂宏和多候选只能形成候选。
 
-### 12.3 Soong/Ninja 门禁
+### 13.3 Soong/Ninja 门禁
 
 模块身份在 namespace 内唯一；确定性依赖两端存在；缺失模块不得形成 active edge；条件属性不得伪装为无条件关系；defaults/filegroup 循环可诊断。Ninja 需区分显式、隐式、order-only 和 phony；冲突 output producer 不得作为确定事实发布。
 
-### 12.4 Rust/FFI 门禁
+### 13.4 Rust/FFI 门禁
 
 验证 impl target、ABI、导出属性冲突、重复 exporter、crate root 和 cfg 状态。未知 cfg、未展开宏和缺失生成源码必须形成 coverage gap。
 
-## 13. 测试与验收
+## 14. 测试与验收
 
 建立原创最小多仓库 fixture，覆盖 Java native、Kotlin external、命名式与显式 JNI、C++ 类型/include、Rust trait/impl/FFI、Android.bp、Ninja 和所有可选构建输入。
 
@@ -375,7 +453,9 @@ bash scripts/rebuild_all.sh --plan-only
 
 Fixture PASS 或 partial smoke PASS 不能描述为完整 AOSP 已验证。
 
-## 14. 实施阶段与 Git 门禁
+跨 Android 版本 fixture 还必须覆盖已知旧语法、当前语法和未知未来语法的降级行为，并验证升级前后 graph diff 能解释事实增删来源。
+
+## 15. 实施阶段与 Git 门禁
 
 实施分为：
 
@@ -387,7 +467,7 @@ Fixture PASS 或 partial smoke PASS 不能描述为完整 AOSP 已验证。
 
 每阶段在独立 `codex/` 分支与 worktree 中按 TDD 实施，形成独立 commit，review 和验证后合并 `main`。只有已合并且干净的物理 worktree 才清理。规范 Python 源码、配置、migration、fixture、查询和文档进入 Git；生成数据库、缓存和本机 local 配置不提交。
 
-## 15. 后续扩展
+## 16. 后续扩展
 
 v0.1 稳定后，精度增强按独立里程碑接入：
 
