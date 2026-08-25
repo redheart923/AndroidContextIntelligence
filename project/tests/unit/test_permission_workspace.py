@@ -75,11 +75,12 @@ enabled = true
     assert tasks[("kotlin", "permission_semantics")].status == "scheduled"
     assert ("xml", "symbols") not in tasks
     assert plan.strict is True
-    assert plan.strict_capability == "permission_semantics"
+    assert plan.strict_capabilities == ("permission_semantics",)
     assert plan.repositories[0].revision == revision
     payload = plan.to_dict()
     assert payload["strict"] is True
-    assert payload["strict_capability"] == "permission_semantics"
+    assert payload["strict_capabilities"] == ["permission_semantics"]
+    assert "strict_capability" not in payload
     assert payload["repositories"][0]["revision"] == revision
 
 

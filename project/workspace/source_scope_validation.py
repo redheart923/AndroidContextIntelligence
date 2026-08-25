@@ -298,8 +298,11 @@ def validate_post_import(
         status = result.get("status") if result else None
         if status not in {"supported", "degraded"}:
             _fail("capability_not_executed", ":".join(key))
-        strict_capability = plan.get("strict_capability")
-        if strict_capability == key[2] and status != "supported":
+        strict_capabilities = plan.get("strict_capabilities")
+        if strict_capabilities is None:
+            legacy = plan.get("strict_capability")
+            strict_capabilities = [legacy] if legacy else []
+        if key[2] in strict_capabilities and status != "supported":
             _fail("strict_capability_gap", ":".join(key))
 
     planned_identities = preflight["enabled_repositories"]

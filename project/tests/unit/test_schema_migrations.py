@@ -26,10 +26,14 @@ def test_call_dataflow_migration_is_idempotent(tmp_path: Path) -> None:
     first = apply_migrations(database, MIGRATIONS)
     second = apply_migrations(database, MIGRATIONS)
 
-    assert first == ("0001_call_dataflow", "0002_effective_fact_views")
+    assert first == (
+        "0001_call_dataflow",
+        "0002_effective_fact_views",
+        "0003_native_build_candidates",
+    )
     assert second == ()
     with sqlite3.connect(database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
         names = {
             row[0]
             for row in connection.execute(
@@ -50,6 +54,61 @@ def test_call_dataflow_migration_is_idempotent(tmp_path: Path) -> None:
         "fact_correction",
         "correction_application",
     } <= names
+
+
+def test_native_candidate_migration_excludes_candidates_from_effective_view(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "graph.db"
+    initialize_base_schema(database)
+    apply_migrations(database, MIGRATIONS)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            INSERT INTO node(
+              node_id, node_type, display_name, extractor,
+              extractor_version, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?)
+            """,
+            (
+                "EXTRACTION_CANDIDATE:demo",
+                "EXTRACTION_CANDIDATE",
+                "demo",
+                "fixture",
+                "1",
+                "2026-08-25T00:00:00+00:00",
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO node(
+              node_id, node_type, display_name, extractor,
+              extractor_version, status, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'active', ?)
+            """,
+            (
+                "CPP_FUNCTION:demo",
+                "CPP_FUNCTION",
+                "demo",
+                "fixture",
+                "1",
+                "2026-08-25T00:00:00+00:00",
+            ),
+        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM effective_node"
+        ).fetchone()[0] == 1
+        assert connection.execute(
+            "SELECT COUNT(*) FROM effective_node "
+            "WHERE node_type='EXTRACTION_CANDIDATE'"
+        ).fetchone()[0] == 0
+        indexes = {
+            row[0]
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )
+        }
+    assert "idx_node_candidate_status" in indexes
 
 
 def test_failed_migration_rolls_back_schema_version(tmp_path: Path) -> None:

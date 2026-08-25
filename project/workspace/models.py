@@ -148,7 +148,12 @@ class WorkspacePlan:
     full_aosp_coverage: bool = False
     default_exclude: tuple[str, ...] = ()
     strict: bool = False
-    strict_capability: str | None = None
+    strict_capabilities: tuple[str, ...] = ()
+
+    @property
+    def strict_capability(self) -> str | None:
+        """Legacy singular accessor retained for in-process callers."""
+        return self.strict_capabilities[0] if len(self.strict_capabilities) == 1 else None
 
     def to_dict(self) -> dict[str, Any]:
         return {"aosp_root": self.aosp_root,
@@ -156,7 +161,67 @@ class WorkspacePlan:
                 "full_aosp_coverage": self.full_aosp_coverage,
                 "default_exclude": list(self.default_exclude),
                 "strict": self.strict,
-                "strict_capability": self.strict_capability,
+                "strict_capabilities": list(self.strict_capabilities),
                 "repositories": [x.to_dict() for x in self.repositories],
                 "inventories": [x.to_dict() for x in self.inventories],
                 "tasks": [x.to_dict() for x in self.tasks]}
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "WorkspacePlan":
+        strict_values = value.get("strict_capabilities")
+        if strict_values is None:
+            legacy = value.get("strict_capability")
+            strict_values = [legacy] if legacy else []
+        if not isinstance(strict_values, (list, tuple)):
+            raise ValueError("strict_capabilities must be an array")
+        repositories = tuple(
+            RepositorySpec(
+                name=str(item["name"]),
+                path=str(item["path"]),
+                enabled=bool(item.get("enabled", False)),
+                include=tuple(item.get("include", ())),
+                exclude=tuple(item.get("exclude", ())),
+                languages=tuple(item.get("languages", ())),
+                source=str(item.get("source", "manifest")),
+                status=str(item.get("status", "available")),
+                revision=item.get("revision"),
+                revision_state=str(item.get("revision_state", "unknown")),
+                revision_dirty=item.get("revision_dirty"),
+                inventory_sha256=item.get("inventory_sha256"),
+                inventory_file_count=int(item.get("inventory_file_count", 0)),
+            )
+            for item in value.get("repositories", [])
+        )
+        inventories = tuple(
+            LanguageInventory(
+                repository=str(item["repository"]),
+                counts={str(key): int(count) for key, count in item.get("counts", {}).items()},
+            )
+            for item in value.get("inventories", [])
+        )
+        tasks = tuple(
+            PlanTask(
+                repository=str(item["repository"]),
+                repository_path=str(item["repository_path"]),
+                language=str(item["language"]),
+                capability=str(item["capability"]),
+                parser=item.get("parser"),
+                status=str(item["status"]),
+                files=int(item["files"]),
+                quality=item.get("quality"),
+                expected_evidence=tuple(item.get("expected_evidence", ())),
+            )
+            for item in value.get("tasks", [])
+        )
+        capabilities = tuple(sorted({str(item) for item in strict_values if item}))
+        return cls(
+            aosp_root=str(value["aosp_root"]),
+            repositories=repositories,
+            inventories=inventories,
+            tasks=tasks,
+            analysis_scope=value.get("analysis_scope", "aosp"),
+            full_aosp_coverage=bool(value.get("full_aosp_coverage", False)),
+            default_exclude=tuple(value.get("default_exclude", ())),
+            strict=bool(value.get("strict", False)),
+            strict_capabilities=capabilities,
+        )

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import replace
 from pathlib import Path
+from typing import Iterable
 from .config import load_workspace_config
 from .languages import detect_languages
 from .manifest import parse_repo_manifest
@@ -20,9 +21,26 @@ class CoverageError(RuntimeError):
     pass
 
 
-def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = False, strict_capability: str | None = None, local_config_path: Path | None = None) -> WorkspacePlan:
+def build_workspace_plan(
+    config_path: Path,
+    registry_path: Path,
+    strict: bool = False,
+    strict_capability: str | None = None,
+    local_config_path: Path | None = None,
+    *,
+    strict_capabilities: Iterable[str] = (),
+) -> WorkspacePlan:
     config = load_workspace_config(config_path, local_config_path)
     registry = load_parser_registry(registry_path)
+    selected_capabilities = tuple(
+        sorted(
+            {
+                item
+                for item in (*strict_capabilities, strict_capability)
+                if item
+            }
+        )
+    )
     repos: dict[str, RepositorySpec] = {}
     manifest = config.aosp_root / ".repo/manifest.xml"
     if config.auto_discover_manifest and manifest.is_file():
@@ -81,8 +99,11 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
                     parser.quality_for(capability) if parser else None,
                     parser.evidence_for(capability) if parser else ())
                 tasks.append(task)
-                if status != "scheduled" and (strict_capability is None or strict_capability == capability): gaps.append(task)
-    effective_strict = strict or config.strict or strict_capability is not None
+                if status != "scheduled" and (
+                    not selected_capabilities or capability in selected_capabilities
+                ):
+                    gaps.append(task)
+    effective_strict = strict or config.strict or bool(selected_capabilities)
     if effective_strict and gaps:
         sample = ", ".join(f"{x.repository}:{x.language}:{x.capability}:{x.status}" for x in gaps[:8])
         raise CoverageError(f"workspace coverage gaps: {sample}")
@@ -95,5 +116,5 @@ def build_workspace_plan(config_path: Path, registry_path: Path, strict: bool = 
         tasks=tuple(tasks),
         default_exclude=config.default_exclude,
         strict=effective_strict,
-        strict_capability=strict_capability,
+        strict_capabilities=selected_capabilities,
     )

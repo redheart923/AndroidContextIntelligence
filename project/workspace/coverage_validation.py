@@ -163,14 +163,18 @@ def validate_runtime_coverage(
 ) -> list[dict[str, object]]:
     report = evaluate_runtime_coverage(plan, database)
     _atomic_json(report_path, report)
-    strict_capability = plan.get("strict_capability")
+    strict_capabilities = plan.get("strict_capabilities")
+    if strict_capabilities is None:
+        legacy = plan.get("strict_capability")
+        strict_capabilities = [legacy] if legacy else []
+    selected = {str(item) for item in strict_capabilities if item}
     gaps = [
         item for item in report
         if item["planned_status"] == "scheduled"
         and item["status"] != "supported"
         and (
-            strict_capability is None
-            or item["capability"] == strict_capability
+            not selected
+            or item["capability"] in selected
         )
     ]
     if bool(plan.get("strict")) and gaps:

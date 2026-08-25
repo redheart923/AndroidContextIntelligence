@@ -23,15 +23,15 @@ def main() -> int:
     parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--strict", action="store_true")
-    parser.add_argument("--strict-capability")
+    parser.add_argument("--strict-capability", action="append", default=[])
     args = parser.parse_args()
     try:
         plan = build_workspace_plan(
-            args.config,
-            args.registry,
-            args.strict,
-            args.strict_capability,
-            args.local_config,
+            config_path=args.config,
+            registry_path=args.registry,
+            strict=args.strict,
+            local_config_path=args.local_config,
+            strict_capabilities=args.strict_capability,
         )
     except CoverageError as error:
         print(f"ERROR: {error}")
