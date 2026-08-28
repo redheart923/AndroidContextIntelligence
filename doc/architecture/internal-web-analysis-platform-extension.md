@@ -182,3 +182,13 @@ SCIP 仅在需要对接外部代码索引、IDE 或 Sourcegraph 类平台时评�
 - [pgvector](https://github.com/pgvector/pgvector)
 - [Neo4j Operations Manual](https://neo4j.com/docs/operations-manual/current/introduction/)
 - [Neo4j Docker Compose deployment](https://neo4j.com/docs/operations-manual/current/docker/docker-compose-standalone/)
+
+### 10.1 External code-graph reference projects
+
+以下项目仅作为后续 MCP、查询服务、增量索引、IDE 集成、证据展示和图可视化的技术参考，不作为当前 Android Context Intelligence 权威事实来源，也不改变 Ctags、Tree-sitter、Blueprint、CodeQL、provenance、candidate isolation、correction replay、validation 和原子发布边界：
+
+- [DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)：重点参考持久化代码图、后台增量索引、覆盖度查询、MCP 工具面、多客户端共享和分级验证工作流。
+- [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify)：重点参考 `EXTRACTED` / `INFERRED` / `AMBIGUOUS` 证据展示、路径解释、社区聚类、代码与文档联合图及静态 HTML 输出。
+- [codegraph-ai/CodeGraph](https://github.com/codegraph-ai/CodeGraph)：重点参考 MCP/LSP/IDE 共用分析引擎、graph-only 模式、混合检索、PR impact analysis 和持久查询服务。
+
+后续若进入实现，应先建立独立的 `MCP Query and External Graph Benchmark` 设计与验收计划，使用相同 AOSP fixture 比较 precision/recall、错误边、覆盖缺口、增量新鲜度、索引时间、数据库体积、查询延迟和 token 消耗。任何外部工具输出默认只能进入 external candidate/diagnostic 或对照报告；只有经过本项目身份解析、provenance 和 validation 后，才允许成为 active graph fact。
