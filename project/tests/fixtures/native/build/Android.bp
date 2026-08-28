@@ -1,0 +1,46 @@
+common_srcs = ["base.cpp"]
+common_srcs += ["extra.cpp"]
+
+cc_defaults {
+    name: "demo_defaults",
+    cflags: ["-DDEMO"],
+    srcs: ["default.cpp"],
+}
+
+filegroup {
+    name: "demo_sources",
+    srcs: ["group.cpp"],
+}
+
+genrule {
+    name: "demo_gen",
+    srcs: ["schema.txt"],
+    out: ["generated.cpp"],
+    cmd: "generate $(in) $(out)",
+}
+
+cc_library {
+    name: "libdependency",
+    srcs: ["dependency.cpp"],
+}
+
+cc_library {
+    name: "libdemo",
+    defaults: ["demo_defaults"],
+    srcs: common_srcs + [":demo_sources"],
+    shared_libs: ["libdependency"],
+    generated_sources: [":demo_gen"],
+}
+
+rust_library {
+    name: "librustdemo",
+    rustlibs: ["libdependency"],
+    crate_name: "rustdemo",
+    srcs: ["src/lib.rs"],
+}
+
+java_library {
+    name: "demo-java",
+    libs: ["libdependency"],
+    srcs: ["src/Demo.java"],
+}
