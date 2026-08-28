@@ -1,0 +1,11 @@
+{
+  "source_revision": "dddddddddddddddddddddddddddddddddddddddd",
+  "modules": {
+    "libdemo": {
+      "path": ["frameworks/native/demo"],
+      "class": ["SHARED_LIBRARIES"],
+      "installed": ["out/target/product/demo/system/lib64/libdemo.so"],
+      "dependencies": ["libdependency"]
+    }
+  }
+}

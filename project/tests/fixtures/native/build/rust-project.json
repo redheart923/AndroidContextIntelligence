@@ -1,0 +1,23 @@
+{
+  "source_revision": "dddddddddddddddddddddddddddddddddddddddd",
+  "crates": [
+    {
+      "crate_id": 0,
+      "display_name": "demo",
+      "root_module": "frameworks/native/rust/src/lib.rs",
+      "edition": "2021",
+      "cfg": ["android", "feature=demo"],
+      "deps": [{"crate": 1, "name": "dep"}],
+      "is_workspace_member": true
+    },
+    {
+      "crate_id": 1,
+      "display_name": "dep",
+      "root_module": "external/dep/src/lib.rs",
+      "edition": "2021",
+      "cfg": [],
+      "deps": [],
+      "is_workspace_member": false
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# Optional generated build metadata. Copy to build_inputs.local.toml and edit
+# paths, hashes and source revisions for the exact source snapshot being built.
+
+[[inputs]]
+kind = "ninja"
+path = "/home/ts/artifacts/out/soong/build.ninja"
+repository = "frameworks/base"
+optional = true
+
+[[inputs]]
+kind = "compile_commands"
+path = "/home/ts/artifacts/compile_commands.json"
+repository = "frameworks/base"
+optional = true

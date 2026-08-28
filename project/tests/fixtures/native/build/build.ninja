@@ -1,0 +1,18 @@
+cxx = clang++
+include common.ninja
+subninja sub/build.ninja
+
+pool local_pool
+  depth = 2
+
+rule cc
+  command = $cxx -Iinclude -DDEBUG -std=c++20 -c $in -o $out --token=$TOKEN
+  description = compile C++
+  pool = local_pool
+
+build out/demo.o | out/demo.d: cc src/demo.cpp | generated.h || order.stamp
+  cflags = -Wall $
+    -Wextra
+
+build all: phony out/demo.o
+default all

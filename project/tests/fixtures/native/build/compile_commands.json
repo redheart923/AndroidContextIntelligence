@@ -1,0 +1,10 @@
+{
+  "source_revision": "dddddddddddddddddddddddddddddddddddddddd",
+  "commands": [
+    {
+      "directory": "/workspace/frameworks/native",
+      "file": "src/demo.cpp",
+      "command": "clang++ -Iinclude -DDEBUG -DAPI_TOKEN=top-secret -std=c++20 -c src/demo.cpp -o out/demo.o"
+    }
+  ]
+}
