@@ -30,10 +30,11 @@ def test_call_dataflow_migration_is_idempotent(tmp_path: Path) -> None:
         "0001_call_dataflow",
         "0002_effective_fact_views",
         "0003_native_build_candidates",
+        "0004_native_candidate_corrections",
     )
     assert second == ()
     with sqlite3.connect(database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 4
         names = {
             row[0]
             for row in connection.execute(

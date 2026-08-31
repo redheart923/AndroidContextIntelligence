@@ -11,7 +11,17 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 
-_ACTIONS = frozenset({"suppress", "replace", "annotate", "add"})
+_ACTIONS = frozenset(
+    {
+        "suppress",
+        "replace",
+        "annotate",
+        "add",
+        "promote_candidate",
+        "suppress_candidate",
+        "replace_binding",
+    }
+)
 _FACT_URI = re.compile(r"^(edge|node|external):(.+)$")
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _CORRECTION_KEYS = frozenset(
@@ -104,7 +114,7 @@ def _required_text(value: Mapping[str, object], key: str) -> str:
 
 
 def _validate_replacement(action: str, replacement: object) -> Mapping[str, Any] | None:
-    if action in {"replace", "add"}:
+    if action in {"replace", "add", "promote_candidate", "replace_binding"}:
         if not isinstance(replacement, dict):
             raise CorrectionError(f"{action} replacement payload must be complete")
         missing = sorted(_EDGE_REPLACEMENT_KEYS - replacement.keys())
@@ -139,7 +149,7 @@ def _validate_replacement(action: str, replacement: object) -> Mapping[str, Any]
                 raise CorrectionError(f"annotation {key} must be a non-empty string")
         return dict(replacement)
     if replacement is not None:
-        raise CorrectionError("suppress does not accept a replacement payload")
+        raise CorrectionError(f"{action} does not accept a replacement payload")
     return None
 
 
@@ -158,6 +168,13 @@ def parse_correction(
     if match is None:
         raise CorrectionError(f"invalid target_fact_uri: {target_fact_uri}")
     replacement = _validate_replacement(action, value.get("replacement"))
+    target_kind, target_identity = match.groups()
+    if action in {"promote_candidate", "suppress_candidate"} and (
+        target_kind != "node" or "EXTRACTION_CANDIDATE" not in target_identity
+    ):
+        raise CorrectionError(f"{action} requires a candidate node target")
+    if action == "replace_binding" and target_kind != "edge":
+        raise CorrectionError("replace_binding requires an edge target")
     if action == "add" and match.group(1) != "external":
         raise CorrectionError("add corrections require an external: target_fact_uri")
     if action != "add" and match.group(1) == "external":
@@ -226,7 +243,13 @@ def validate_corrections(corrections: Iterable[Correction]) -> tuple[Correction,
         if correction.correction_id in ids:
             raise CorrectionError(f"duplicate correction_id: {correction.correction_id}")
         ids.add(correction.correction_id)
-        if correction.action in {"suppress", "replace"}:
+        if correction.action in {
+            "suppress",
+            "replace",
+            "promote_candidate",
+            "suppress_candidate",
+            "replace_binding",
+        }:
             if correction.target_fact_uri in effective_targets:
                 raise CorrectionError(
                     f"conflicting effective corrections for {correction.target_fact_uri}"
@@ -383,7 +406,7 @@ def _materialize_reviewed_edge(
         source_revision=source_revision,
         identity=f"{correction.correction_id}:reviewed",
     )
-    if correction.action == "replace":
+    if correction.action in {"replace", "replace_binding", "promote_candidate"}:
         correction_node = f"FACT_CORRECTION:{correction.correction_id}"
         reviewed_node = f"REVIEWED_FACT:{correction.correction_id}"
         raw_node = f"FACT_REFERENCE:{_digest(correction.target_fact_uri)}"
@@ -550,7 +573,12 @@ def apply_corrections(
                 applications.append(application)
                 continue
             effective_uri = correction.target_fact_uri
-            if correction.action in {"replace", "add"}:
+            if correction.action in {
+                "replace",
+                "add",
+                "promote_candidate",
+                "replace_binding",
+            }:
                 effective_uri = _materialize_reviewed_edge(
                     connection, correction, source_revision
                 )
@@ -559,7 +587,9 @@ def apply_corrections(
                 status="applied",
                 target_content_hash=target_hash,
                 effective_fact_uri=(
-                    None if correction.action == "suppress" else effective_uri
+                    None
+                    if correction.action in {"suppress", "suppress_candidate"}
+                    else effective_uri
                 ),
                 message=f"approved {correction.action} correction applied",
             )

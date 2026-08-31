@@ -191,3 +191,36 @@ def test_idempotent_replay_keeps_one_application(tmp_path: Path) -> None:
     apply_corrections(database, (correction,), source_revision="abc", run_id="run-1")
 
     assert scalar(database, "SELECT COUNT(*) FROM correction_application") == 1
+
+
+def test_candidate_actions_require_candidate_targets_and_complete_promotion() -> None:
+    value = correction_dict(action="promote_candidate")
+    value["target_fact_uri"] = "node:EXTRACTION_CANDIDATE:demo"
+    with pytest.raises(CorrectionError, match="replacement payload"):
+        parse_correction(value)
+
+    invalid = correction_dict(action="suppress_candidate")
+    with pytest.raises(CorrectionError, match="candidate node"):
+        parse_correction(invalid)
+
+
+def test_replace_binding_uses_revision_and_hash_guards(tmp_path: Path) -> None:
+    database, edge_id, content_hash = graph_db(tmp_path)
+    value = correction_dict(action="replace_binding", edge_id=edge_id, expected_hash=content_hash)
+    value["replacement"] = {
+        "fact_kind": "edge",
+        "edge_type": "JNI_BINDS_TO",
+        "from_node_id": "node-a",
+        "to_node_id": "node-c",
+        "properties": {"confidence_class": "reviewed"},
+        "source_path": "demo/A.java",
+        "line_start": 5,
+        "line_end": 5,
+    }
+
+    report = apply_corrections(
+        database, (parse_correction(value),), source_revision="abc", run_id="run-1"
+    )
+
+    assert report.applications[0].status == "applied"
+    assert scalar(database, "SELECT COUNT(*) FROM effective_edge WHERE edge_type='JNI_BINDS_TO'") == 1
