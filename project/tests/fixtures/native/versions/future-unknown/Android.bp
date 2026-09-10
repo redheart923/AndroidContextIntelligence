@@ -1,0 +1,7 @@
+future_native_module {
+    name: "future_demo",
+    srcs: select(release_flag(), {
+        "enabled": ["future.cpp"],
+        default: [],
+    }),
+}

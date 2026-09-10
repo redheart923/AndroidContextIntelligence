@@ -9,7 +9,11 @@ import pytest
 from collectors.build.compile_commands import load_compile_commands
 from collectors.build.module_info import load_module_info
 from collectors.build.rust_project import load_rust_project
-from workspace.build_inputs import BuildInputError, load_build_inputs
+from workspace.build_inputs import (
+    BuildInputError,
+    inspect_build_inputs,
+    load_build_inputs,
+)
 
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures/native/build"
@@ -36,6 +40,23 @@ optional = true
     )
     with pytest.raises(BuildInputError, match="required build input is missing"):
         load_build_inputs(config)
+
+
+def test_inspection_reports_optional_missing_inputs(tmp_path: Path) -> None:
+    config = tmp_path / "inputs.toml"
+    config.write_text(
+        '''[[inputs]]
+kind = "ninja"
+path = "missing/build.ninja"
+optional = true
+''',
+        encoding="utf-8",
+    )
+
+    result = inspect_build_inputs(config)
+
+    assert result.inputs == ()
+    assert result.optional_missing == ("missing/build.ninja",)
 
 
 def test_build_input_hash_mismatch_is_rejected(tmp_path: Path) -> None:
@@ -134,4 +155,10 @@ def test_rust_project_and_module_info_emit_modules_and_dependencies() -> None:
     assert libdemo.properties["installed_files"] == [
         "out/target/product/demo/system/lib64/libdemo.so"
     ]
+    assert any(
+        item.fact_kind == "MODULE_INFO_DESCRIBES"
+        and item.from_identity == "module-info:soong:module:libdemo"
+        and item.to_identity == "soong:module:libdemo"
+        for item in module_info.relations
+    )
     assert any(item.fact_kind == "MODULE_INFO_DEPENDS_ON" for item in module_info.relations)

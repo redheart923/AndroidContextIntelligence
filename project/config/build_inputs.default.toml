@@ -1,0 +1,2 @@
+# Generated build products are optional and must be supplied explicitly.
+inputs = []

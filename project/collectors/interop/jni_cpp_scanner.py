@@ -29,6 +29,8 @@ class RegistrationParseResult:
     registrations: tuple[CandidateFact, ...]
     diagnostics: tuple[DiagnosticFact, ...]
     source_path: str
+    grammar_name: str
+    grammar_fingerprint: str
 
 
 def _workspace_path(path: Path, repository: str) -> str:
@@ -206,6 +208,8 @@ def scan_jni_cpp_file(
         registrations=tuple(registrations),
         diagnostics=base.diagnostics,
         source_path=source_path,
+        grammar_name=base.grammar_name,
+        grammar_fingerprint=base.grammar_fingerprint,
     )
 
 

@@ -107,6 +107,8 @@ def collect_provenance(
     correction_report: Path | None = None,
     fingerprints: Path | None = None,
     scope_report: Path | None = None,
+    build_inputs: Path | None = None,
+    native_pipeline_report: Path | None = None,
 ) -> dict[str, object]:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     aosp_root = Path(str(plan["aosp_root"]))
@@ -146,6 +148,11 @@ def collect_provenance(
             "source_roots.default.toml": _file_identity(source_config),
             "source_roots.local.toml": _file_identity(local_config),
             "parser_registry.toml": _file_identity(parser_registry),
+            **(
+                {"build_inputs.toml": _file_identity(build_inputs)}
+                if build_inputs is not None
+                else {}
+            ),
         },
         "tools": {
             "python": {
@@ -166,6 +173,7 @@ def collect_provenance(
             "codeql_report": _file_identity(codeql_report),
             "correction_report": _file_identity(correction_report),
             "fingerprints": _file_identity(fingerprints),
+            "native_pipeline_report": _file_identity(native_pipeline_report),
         },
         "source_scope": _source_scope_identity(scope_report),
     }
@@ -263,6 +271,8 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--correction-report", type=Path)
     collect.add_argument("--fingerprints", type=Path)
     collect.add_argument("--scope-report", type=Path)
+    collect.add_argument("--build-inputs", type=Path)
+    collect.add_argument("--native-pipeline-report", type=Path)
     validate = commands.add_parser("validate")
     validate.add_argument("--provenance", type=Path, required=True)
     validate.add_argument("--require-complete", action="store_true")
@@ -282,6 +292,8 @@ def main(arguments: list[str] | None = None) -> int:
             parsed.correction_report,
             parsed.fingerprints,
             parsed.scope_report,
+            parsed.build_inputs,
+            parsed.native_pipeline_report,
         )
         parsed.output.parent.mkdir(parents=True, exist_ok=True)
         parsed.output.write_text(

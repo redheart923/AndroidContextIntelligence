@@ -352,6 +352,14 @@ def project(tmp_path: Path) -> Path:
     )
     _write(root / "config/source_roots.default.toml", "[workspace]\n")
     _write(root / "config/parser_registry.toml", "[parsers]\n")
+    shutil.copy2(
+        SNAPSHOT_ROOT / "config/build_inputs.default.toml",
+        root / "config/build_inputs.default.toml",
+    )
+    shutil.copytree(
+        SNAPSHOT_ROOT / "config/corrections",
+        root / "config/corrections",
+    )
     _write(root / "workspace/cli.py", CLI_STUB)
     _write(root / "workspace/pipeline.py", PIPELINE_STUB)
     _write(root / "workspace/multi_aidl.py", REPORT_STUB)

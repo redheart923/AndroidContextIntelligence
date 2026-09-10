@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import pytest
 from pathlib import Path
 
 from graph.writer import Edge, GraphWriter, Node
@@ -53,3 +54,27 @@ def test_strict_capability_requires_materialized_evidence(tmp_path: Path) -> Non
 
     assert report.valid is False
     assert "strict capability has no validated evidence: jni_bindings" in report.errors
+
+
+@pytest.mark.parametrize("kind", ["C_FUNCTION", "CPP_FUNCTION", "CPP_METHOD", "RUST_FUNCTION"])
+def test_native_symbols_gate_accepts_ordinary_functions(tmp_path: Path, kind: str) -> None:
+    path = database(tmp_path)
+    writer = GraphWriter(path)
+    writer.upsert_node(Node("function:demo", kind, "demo"))
+    writer.close()
+    report = validate_native_graph(path, (), ("native_symbols",))
+    assert report.valid, report.errors
+    assert report.metrics["strict:native_symbols"] == 1
+
+
+@pytest.mark.parametrize("kind", ["C_TYPE", "CPP_TYPE", "RUST_TYPE"])
+def test_native_types_gate_accepts_each_supported_language(
+    tmp_path: Path, kind: str,
+) -> None:
+    path = database(tmp_path)
+    writer = GraphWriter(path)
+    writer.upsert_node(Node("type:demo", kind, "demo"))
+    writer.close()
+    report = validate_native_graph(path, (), ("native_types",))
+    assert report.valid, report.errors
+    assert report.metrics["strict:native_types"] == 1

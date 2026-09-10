@@ -54,17 +54,23 @@ def _evidence_count(
     if not separator or not value:
         raise RuntimeCoverageError(f"invalid evidence contract: {evidence}")
     suffixes = {
-        "java": ".java",
-        "kotlin": ".kt",
-        "xml": ".xml",
-        "aidl": ".aidl",
+        "java": (".java",),
+        "kotlin": (".kt", ".kts"),
+        "xml": (".xml",),
+        "aidl": (".aidl",),
+        "c": (".c", ".h"),
+        "cpp": (".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh"),
+        "rust": (".rs",),
+        "blueprint": (".bp",),
     }
-    suffix = suffixes.get(language)
+    extensions = suffixes.get(language, ())
     suffix_sql = (
-        " AND LOWER(REPLACE(COALESCE(source_path, ''), '\\', '/')) LIKE ?"
-        if suffix else ""
+        " AND (" + " OR ".join(
+            "LOWER(REPLACE(COALESCE(source_path, ''), '\\', '/')) LIKE ?"
+            for _ in extensions
+        ) + ")" if extensions else ""
     )
-    suffix_args: tuple[str, ...] = (f"%{suffix}",) if suffix else ()
+    suffix_args = tuple(f"%{suffix}" for suffix in extensions)
     if kind == "node_type":
         query = (
             f"SELECT COUNT(*) FROM node WHERE node_type=? AND {source_sql}"

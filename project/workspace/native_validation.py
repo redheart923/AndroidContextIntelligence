@@ -25,7 +25,7 @@ _ENDPOINTS = {
     "DEPENDS_ON": ({"SOONG_MODULE"}, {"SOONG_MODULE"}),
     "USES_DEFAULTS": ({"SOONG_MODULE"}, {"SOONG_MODULE"}),
     "MATERIALIZED_AS": ({"SOONG_MODULE"}, {"BUILD_ACTION"}),
-    "CONSUMES": ({"BUILD_ACTION"}, {"BUILD_ARTIFACT"}),
+    "CONSUMES": ({"BUILD_ACTION"}, {"BUILD_ARTIFACT", "SOURCE_REFERENCE"}),
     "PRODUCES": ({"BUILD_ACTION"}, {"BUILD_ARTIFACT"}),
 }
 
@@ -96,11 +96,19 @@ def validate_native_graph(
                 errors.append(f"unknown strict capability: {capability}")
                 continue
             table, fact_kind = evidence
+            fact_kinds = (
+                ("NATIVE_FUNCTION", "C_FUNCTION", "CPP_FUNCTION", "CPP_METHOD", "RUST_FUNCTION")
+                if capability == "native_symbols"
+                else ("C_TYPE", "CPP_TYPE", "RUST_TYPE")
+                if capability == "native_types"
+                else (fact_kind,)
+            )
             column = "node_type" if table == "node" else "edge_type"
             count = int(
                 connection.execute(
-                    f"SELECT COUNT(*) FROM effective_{table} WHERE {column}=?",
-                    (fact_kind,),
+                    f"SELECT COUNT(*) FROM effective_{table} WHERE {column} IN "
+                    f"({','.join('?' for _ in fact_kinds)})",
+                    fact_kinds,
                 ).fetchone()[0]
             )
             metrics[f"strict:{capability}"] = count

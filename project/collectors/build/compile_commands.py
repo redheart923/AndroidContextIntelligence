@@ -138,6 +138,7 @@ def load_compile_commands(
             "command_sha256": hashlib.sha256(
                 command_material.encode("utf-8")
             ).hexdigest(),
+            "compile_directory": directory,
             "defines": defines,
             "include_paths": includes,
         }

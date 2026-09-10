@@ -5,6 +5,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.default.toml"
 LOCAL_CONFIG="$PROJECT_ROOT/config/source_roots.local.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
+BUILD_INPUTS="$PROJECT_ROOT/config/build_inputs.default.toml"
 VENDOR_INPUT="$PROJECT_ROOT/vendor-input"
 VENDOR_CACHE="$PROJECT_ROOT/.cache/vendor-artifacts"
 SERVICE_CACHE="$PROJECT_ROOT/.cache/service-registration"
@@ -19,6 +20,7 @@ JADX_BIN="${JADX_BIN:-jadx}"
 MODE="rebuild"
 KEEP_FAILED=0
 STRICT=()
+NATIVE_STRICT=()
 PROVENANCE_STRICT=()
 
 usage() {
@@ -37,6 +39,7 @@ Options:
   --jadx-bin FILE             Use a specific JADX executable.
   --codeql-db DIR             Import a verified java-kotlin CodeQL database.
   --codeql-bin FILE           Use a specific CodeQL executable.
+  --build-inputs FILE         Import optional Ninja/build metadata configuration.
   --corrections-dir DIR       Replay approved Git-managed corrections.
   --retain-history            Retain immutable reports for the verified build.
   --retain-history-database   Also retain the verified SQLite database.
@@ -74,6 +77,9 @@ while [[ $# -gt 0 ]]; do
             STRICT+=(--strict)
             PROVENANCE_STRICT+=(--require-complete)
             CALL_DATAFLOW_STRICT=1
+            for capability in native_symbols native_types native_includes rust_ffi jni_bindings soong_build_graph; do
+                NATIVE_STRICT+=(--strict-capability "$capability")
+            done
             shift
             ;;
         --strict-capability)
@@ -83,6 +89,16 @@ while [[ $# -gt 0 ]]; do
             if [[ "$2" == "call_graph" || "$2" == "interprocedural_dataflow" ]]; then
                 CALL_DATAFLOW_STRICT=1
             fi
+            case "$2" in
+                native_symbols|native_types|native_includes|rust_ffi|jni_bindings|soong_build_graph|ninja_build_graph)
+                    NATIVE_STRICT+=(--strict-capability "$2")
+                    ;;
+            esac
+            shift 2
+            ;;
+        --build-inputs)
+            [[ $# -ge 2 ]] || die "--build-inputs requires a path"
+            BUILD_INPUTS="$2"
             shift 2
             ;;
         --codeql-db)
@@ -266,6 +282,14 @@ python -m workspace.pipeline annotate \
     --plan "$PLAN" \
     --db "$STAGED_DB"
 
+NATIVE_PIPELINE_REPORT="$STAGED_RAW/native-pipeline-report.json"
+python -m workspace.native_pipeline \
+    --db "$STAGED_DB" \
+    --plan "$PLAN" \
+    --raw-root "$STAGED_RAW" \
+    --build-inputs "$BUILD_INPUTS" \
+    "${NATIVE_STRICT[@]}"
+
 CODEQL_REPORT="$STAGED_RAW/codeql/call-dataflow-report.json"
 CORRECTION_REPORT="$STAGED_WORKSPACE/correction-application-report.json"
 CALL_DATAFLOW_REPORT="$STAGED_WORKSPACE/call-dataflow-validation.json"
@@ -294,6 +318,11 @@ else
         --report "$CODEQL_REPORT" \
         --correction-report "$CORRECTION_REPORT"
 fi
+
+python -m workspace.correction_replay \
+    --db "$STAGED_DB" \
+    --corrections-dir "$CORRECTIONS_DIR" \
+    --report "$CORRECTION_REPORT"
 
 CALL_DATAFLOW_VALIDATION_ARGS=()
 if [[ "$CALL_DATAFLOW_STRICT" -eq 1 ]]; then
@@ -328,6 +357,8 @@ python -m workspace.provenance collect \
     --vendor-manifest "$VENDOR_MANIFEST" \
     --codeql-report "$CODEQL_REPORT" \
     --correction-report "$CORRECTION_REPORT" \
+    --build-inputs "$BUILD_INPUTS" \
+    --native-pipeline-report "$NATIVE_PIPELINE_REPORT" \
     --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
     --output "$SOURCE_PROVENANCE"
 
@@ -355,6 +386,8 @@ python -m workspace.provenance collect \
     --vendor-manifest "$VENDOR_MANIFEST" \
     --codeql-report "$CODEQL_REPORT" \
     --correction-report "$CORRECTION_REPORT" \
+    --build-inputs "$BUILD_INPUTS" \
+    --native-pipeline-report "$NATIVE_PIPELINE_REPORT" \
     --fingerprints "$STAGED_WORKSPACE/semantic-fingerprints.json" \
     --scope-report "$SCOPE_REPORT" \
     --output "$STAGED_WORKSPACE/provenance.json"

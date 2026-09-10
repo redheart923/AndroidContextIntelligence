@@ -34,11 +34,12 @@ def load_module_info(
         if name == "source_revision" or not isinstance(raw, Mapping):
             continue
         identity = f"soong:module:{name}"
+        metadata_identity = f"module-info:{identity}"
         facts.append(
             BuildModuleFact(
                 language="build-metadata",
                 fact_kind="SOONG_MODULE_METADATA",
-                logical_identity=identity,
+                logical_identity=metadata_identity,
                 module_name=str(name),
                 module_kind="module_info",
                 source_range=location,
@@ -48,6 +49,20 @@ def load_module_info(
                     "module_classes": list(raw.get("class", [])),  # type: ignore[arg-type]
                     "installed_files": list(raw.get("installed", [])),  # type: ignore[arg-type]
                 },
+            )
+        )
+        relations.append(
+            RelationFact(
+                language="build-metadata",
+                fact_kind="MODULE_INFO_DESCRIBES",
+                logical_identity=(
+                    f"MODULE_INFO_DESCRIBES:{metadata_identity}->{identity}"
+                ),
+                from_identity=metadata_identity,
+                to_identity=identity,
+                source_range=location,
+                evidence=evidence,
+                properties={},
             )
         )
         for dependency in raw.get("dependencies", []):  # type: ignore[union-attr]

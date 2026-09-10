@@ -1,0 +1,4 @@
+cc_library {
+    name: "legacy_demo",
+    srcs: ["legacy.cpp"],
+}

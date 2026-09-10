@@ -198,6 +198,59 @@ def test_collect_includes_codeql_corrections_and_semantic_fingerprints(
     assert semantic["fingerprints"]["sha256"]
 
 
+def test_collect_binds_native_pipeline_and_build_input_identities(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "aosp/frameworks/native"
+    repository.mkdir(parents=True)
+    (repository / "Source.cpp").write_text("int source() {}\n", encoding="utf-8")
+    source = tmp_path / "source.toml"
+    source.write_text("[workspace]\n", encoding="utf-8")
+    registry = tmp_path / "registry.toml"
+    registry.write_text("[parsers]\n", encoding="utf-8")
+    build_inputs = tmp_path / "build_inputs.toml"
+    build_inputs.write_text("# optional build metadata\n", encoding="utf-8")
+    native_report = tmp_path / "native-pipeline-report.json"
+    native_report.write_text('{"status":"published"}\n', encoding="utf-8")
+    inventory = __import__(
+        "workspace.revisions", fromlist=["inspect_repository_provenance"]
+    ).inspect_repository_provenance(repository)
+    plan = tmp_path / "plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "aosp_root": str(tmp_path / "aosp"),
+                "default_exclude": [],
+                "repositories": [
+                    {
+                        "name": "frameworks/native",
+                        "path": "frameworks/native",
+                        "enabled": True,
+                        "include": [],
+                        "exclude": [],
+                        "languages": ["cpp"],
+                        "revision": inventory.revision,
+                        "inventory_sha256": inventory.inventory_sha256,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = collect_provenance(
+        plan,
+        source,
+        registry,
+        build_inputs=build_inputs,
+        native_pipeline_report=native_report,
+    )
+
+    assert payload["configs"]["build_inputs.toml"]["sha256"]
+    assert payload["semantic_pipeline"]["native_pipeline_report"]["sha256"]
+    validate_provenance(payload, require_complete=True)
+
+
 def test_collect_binds_verified_source_scope_report(tmp_path: Path) -> None:
     repository = tmp_path / "aosp/frameworks/base"
     repository.mkdir(parents=True)

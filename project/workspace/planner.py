@@ -9,12 +9,15 @@ from .models import LanguageInventory, PlanTask, RepositorySpec, WorkspacePlan
 from .registry import load_parser_registry
 from .revisions import inspect_repository_provenance
 
-CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"),
-                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"),
+CAPABILITIES = {"java": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow", "jni_bindings"),
+                "aidl": ("symbols", "binder"), "kotlin": ("symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow", "jni_bindings"),
                 "xml": ("permission_semantics",),
-                "c": ("symbols", "native_binder"), "cpp": ("symbols", "native_binder"),
-                "rust": ("symbols", "native_binder"), "hidl": ("symbols", "binder"),
-                "python": ("symbols",), "blueprint": ("build",), "make": ("build",), "proto": ("symbols",)}
+                "c": ("native_symbols", "native_types", "native_includes"),
+                "cpp": ("native_symbols", "native_types", "native_includes", "jni_bindings"),
+                "rust": ("native_symbols", "native_types", "rust_ffi"),
+                "hidl": ("symbols", "binder"),
+                "python": ("symbols",), "blueprint": ("soong_build_graph",),
+                "make": ("build",), "proto": ("symbols",)}
 
 
 class CoverageError(RuntimeError):

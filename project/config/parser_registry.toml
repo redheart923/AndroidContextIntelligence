@@ -1,10 +1,11 @@
 [parsers.java]
 implementation = "java_symbol_importer"
 enabled = true
-capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"]
+capabilities = ["symbols", "inheritance", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow", "jni_bindings"]
 [parsers.java.capability_implementations]
 call_graph = "codeql_java_kotlin_importer"
 interprocedural_dataflow = "codeql_java_kotlin_importer"
+jni_bindings = "native_static_pipeline"
 [parsers.java.capability_quality]
 symbols = "tags_only"
 inheritance = "heuristic"
@@ -12,6 +13,7 @@ service_registration = "heuristic"
 permission_semantics = "heuristic"
 call_graph = "semantic"
 interprocedural_dataflow = "semantic"
+jni_bindings = "heuristic"
 [parsers.java.capability_evidence]
 symbols = ["node_type_prefix:JAVA_"]
 inheritance = ["edge_type:EXTENDS", "edge_type:IMPLEMENTS_JAVA_INTERFACE"]
@@ -19,6 +21,7 @@ service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_S
 permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
 call_graph = ["typed_table:call_site"]
 interprocedural_dataflow = ["typed_table:dataflow_path"]
+jni_bindings = ["edge_type_any_source:JNI_BINDS_TO"]
 
 [parsers.aidl]
 implementation = "aidl_binder_importer"
@@ -34,35 +37,64 @@ binder = ["edge_type_any_source:IMPLEMENTS_BINDER"]
 [parsers.kotlin]
 implementation = "kotlin_ctags_importer"
 enabled = true
-capabilities = ["symbols", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow"]
+capabilities = ["symbols", "service_registration", "permission_semantics", "call_graph", "interprocedural_dataflow", "jni_bindings"]
 [parsers.kotlin.capability_implementations]
 call_graph = "codeql_java_kotlin_importer"
 interprocedural_dataflow = "codeql_java_kotlin_importer"
+jni_bindings = "native_static_pipeline"
 [parsers.kotlin.capability_quality]
 symbols = "tags_only"
 service_registration = "heuristic"
 permission_semantics = "heuristic"
 call_graph = "semantic"
 interprocedural_dataflow = "semantic"
+jni_bindings = "heuristic"
 [parsers.kotlin.capability_evidence]
 symbols = ["node_type_prefix:KOTLIN_"]
 service_registration = ["edge_type:REGISTERED_AS", "edge_type:EXPOSED_AS_LOCAL_SERVICE"]
 permission_semantics = ["edge_type:REQUIRES_PERMISSION", "edge_type:CHECKS_PERMISSION", "edge_type:ENFORCES_PERMISSION"]
 call_graph = ["typed_table:call_site"]
 interprocedural_dataflow = ["typed_table:dataflow_path"]
+jni_bindings = ["edge_type_any_source:JNI_BINDS_TO"]
 
 [parsers.c]
-implementation = ""
-enabled = false
-capabilities = []
+implementation = "native_static_pipeline"
+enabled = true
+capabilities = ["native_symbols", "native_types", "native_includes"]
+[parsers.c.capability_quality]
+native_symbols = "heuristic"
+native_types = "heuristic"
+native_includes = "heuristic"
+[parsers.c.capability_evidence]
+native_symbols = ["node_type:C_FUNCTION"]
+native_types = ["node_type:C_TYPE"]
+native_includes = ["edge_type:INCLUDES"]
 [parsers.cpp]
-implementation = ""
-enabled = false
-capabilities = []
+implementation = "native_static_pipeline"
+enabled = true
+capabilities = ["native_symbols", "native_types", "native_includes", "jni_bindings"]
+[parsers.cpp.capability_quality]
+native_symbols = "heuristic"
+native_types = "heuristic"
+native_includes = "heuristic"
+jni_bindings = "heuristic"
+[parsers.cpp.capability_evidence]
+native_symbols = ["node_type_prefix:CPP_"]
+native_types = ["node_type:CPP_TYPE"]
+native_includes = ["edge_type:INCLUDES"]
+jni_bindings = ["edge_type_any_source:JNI_BINDS_TO"]
 [parsers.rust]
-implementation = ""
-enabled = false
-capabilities = []
+implementation = "native_static_pipeline"
+enabled = true
+capabilities = ["native_symbols", "native_types", "rust_ffi"]
+[parsers.rust.capability_quality]
+native_symbols = "heuristic"
+native_types = "heuristic"
+rust_ffi = "heuristic"
+[parsers.rust.capability_evidence]
+native_symbols = ["node_type_prefix:RUST_"]
+native_types = ["node_type:RUST_TYPE"]
+rust_ffi = ["edge_type:EXPORTS_C_ABI_SYMBOL"]
 [parsers.hidl]
 implementation = ""
 enabled = false
@@ -72,9 +104,13 @@ implementation = ""
 enabled = false
 capabilities = []
 [parsers.blueprint]
-implementation = ""
-enabled = false
-capabilities = []
+implementation = "native_static_pipeline"
+enabled = true
+capabilities = ["soong_build_graph"]
+[parsers.blueprint.capability_quality]
+soong_build_graph = "heuristic"
+[parsers.blueprint.capability_evidence]
+soong_build_graph = ["node_type:SOONG_MODULE"]
 [parsers.make]
 implementation = ""
 enabled = false

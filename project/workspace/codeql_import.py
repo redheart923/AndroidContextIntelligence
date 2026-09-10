@@ -10,11 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from collectors.codeql.corrections import (
-    CorrectionError,
-    apply_corrections,
-    load_corrections,
-)
 from collectors.codeql.materializer import (
     MaterializationRun,
     materialize_call_graph,
@@ -315,13 +310,6 @@ def import_codeql_facts(
     run = MaterializationRun(run_id, evidence_id, manifest.source_fingerprint)
     call_report = materialize_call_graph(database, records, run)
     security_report = materialize_security_facts(database, records, run)
-    corrections = load_corrections(corrections_dir)
-    applications = apply_corrections(
-        database,
-        corrections,
-        source_revision=manifest.source_fingerprint,
-        run_id=run_id,
-    )
     completed_at = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(database) as connection:
         connection.execute(
@@ -329,9 +317,10 @@ def import_codeql_facts(
             (completed_at, run_id),
         )
     correction_payload = {
+        "status": "deferred",
         "run_id": run_id,
         "correction_directory_sha256": _directory_digest(corrections_dir),
-        "applications": [asdict(item) for item in applications.applications],
+        "applications": [],
     }
     _atomic_json(correction_report, correction_payload)
     payload: dict[str, object] = {
@@ -407,7 +396,6 @@ def main(arguments: list[str] | None = None) -> int:
         CodeQLImportError,
         CodeQLDatabaseError,
         CodeQLRunnerError,
-        CorrectionError,
         ValueError,
     ) as error:
         print(f"ERROR: {error}")

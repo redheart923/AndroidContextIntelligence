@@ -86,6 +86,25 @@ def test_scheduled_parser_without_runtime_evidence_is_degraded(tmp_path: Path) -
     assert report[1]["status"] == "unsupported"
 
 
+@pytest.mark.parametrize("extension", ["cpp", "cc", "cxx", "h", "hh", "hpp"])
+def test_cpp_coverage_recognizes_all_translation_unit_extensions(
+    tmp_path: Path, extension: str,
+) -> None:
+    database = tmp_path / "graph.db"
+    _database(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "INSERT INTO node(node_id, node_type, source_path) VALUES (?, ?, ?)",
+            ("cpp:demo", "CPP_FUNCTION", f"frameworks/base/demo.{extension}"),
+        )
+    plan = _plan()
+    plan["tasks"] = [{
+        **plan["tasks"][0], "language": "cpp", "capability": "native_symbols",
+        "expected_evidence": ["node_type:CPP_FUNCTION"],
+    }]
+    assert evaluate_runtime_coverage(plan, database)[0]["status"] == "supported"
+
+
 def test_observed_evidence_preserves_declared_quality(tmp_path: Path) -> None:
     database = tmp_path / "graph.db"
     _database(database)

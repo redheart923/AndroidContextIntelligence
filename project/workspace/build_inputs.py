@@ -25,13 +25,20 @@ class BuildInput:
     content_fingerprint: str
 
 
-def load_build_inputs(path: Path) -> tuple[BuildInput, ...]:
+@dataclass(frozen=True)
+class BuildInputInspection:
+    inputs: tuple[BuildInput, ...]
+    optional_missing: tuple[str, ...]
+
+
+def inspect_build_inputs(path: Path) -> BuildInputInspection:
     config_path = path.resolve()
     payload = tomllib.loads(config_path.read_text(encoding="utf-8"))
     raw_inputs = payload.get("inputs", [])
     if not isinstance(raw_inputs, list):
         raise BuildInputError("inputs must be an array of tables")
     inputs: list[BuildInput] = []
+    optional_missing: list[str] = []
     for index, raw in enumerate(raw_inputs):
         if not isinstance(raw, dict):
             raise BuildInputError(f"inputs[{index}] must be a table")
@@ -48,6 +55,7 @@ def load_build_inputs(path: Path) -> tuple[BuildInput, ...]:
         optional = bool(raw.get("optional", False))
         if not artifact.is_file():
             if optional:
+                optional_missing.append(raw_path)
                 continue
             raise BuildInputError(f"required build input is missing: {artifact}")
         digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -72,4 +80,11 @@ def load_build_inputs(path: Path) -> tuple[BuildInput, ...]:
                 content_fingerprint=digest,
             )
         )
-    return tuple(sorted(inputs, key=lambda item: (item.kind, item.path.as_posix())))
+    return BuildInputInspection(
+        tuple(sorted(inputs, key=lambda item: (item.kind, item.path.as_posix()))),
+        tuple(sorted(optional_missing)),
+    )
+
+
+def load_build_inputs(path: Path) -> tuple[BuildInput, ...]:
+    return inspect_build_inputs(path).inputs

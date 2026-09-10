@@ -140,7 +140,16 @@ def materialize_typed_facts(
                 if not _exists(writer, fact.from_identity):
                     _reference(writer, fact.from_identity, fact)
                 if not _exists(writer, fact.to_identity):
-                    if fact.fact_kind in {"INCLUDES", "IMPORTS", "IMPORTS_C_ABI_SYMBOL"}:
+                    if fact.fact_kind in {
+                        "INCLUDES",
+                        "IMPORTS",
+                        "IMPORTS_C_ABI_SYMBOL",
+                        "COMPILES_SOURCE",
+                        "GENERATES",
+                        "CONSUMES",
+                        "PRODUCES",
+                        "USES_RULE",
+                    }:
                         _reference(writer, fact.to_identity, fact)
                     else:
                         _candidate_from_unresolved(writer, fact, "missing_relation_endpoint")
