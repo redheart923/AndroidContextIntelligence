@@ -116,3 +116,38 @@ def test_lexer_and_parser_fail_closed_on_unterminated_input() -> None:
             'cc_library { name: "broken"',
             "demo/Android.bp",
         )
+
+
+def test_select_map_accepts_boolean_branch_keys() -> None:
+    document = parse_blueprint(
+        '''filegroup {
+    name: "demo",
+    srcs: select(release_flag("FLAG"), {
+        true: ["Enabled.java"],
+        false: [],
+        default: [],
+    }),
+}
+''',
+        "frameworks/base/core/java/Android.bp",
+    )
+
+    branches = document.modules[0].property("srcs").value.items[1]
+    assert [key for key, _ in branches.entries] == ["true", "false", "default"]
+
+
+def test_select_map_preserves_any_binding_branch_key() -> None:
+    document = parse_blueprint(
+        '''cc_defaults {
+    name: "demo",
+    flags: select(soong_config_variable("ANDROID", "flag"), {
+        any @ selected: selected,
+        default: [],
+    }),
+}
+''',
+        "frameworks/base/services/Android.bp",
+    )
+
+    branches = document.modules[0].property("flags").value.items[1]
+    assert [key for key, _ in branches.entries] == ["any @ selected", "default"]

@@ -174,11 +174,21 @@ class _Parser:
             if self.current.kind != "RBRACE":
                 while True:
                     key = self.current
-                    if key.kind not in {"IDENT", "STRING"}:
+                    if key.kind not in {"IDENT", "STRING", "BOOL"}:
                         self.expect("IDENT")
                     self.index += 1
+                    binding: str | None = None
+                    if self.accept("AT") is not None:
+                        binding = str(self.expect("IDENT").value)
                     self.expect("COLON")
-                    entries.append((str(key.value), self.expression()))
+                    key_value = (
+                        str(key.value).lower()
+                        if key.kind == "BOOL"
+                        else str(key.value)
+                    )
+                    if binding is not None:
+                        key_value = f"{key_value} @ {binding}"
+                    entries.append((key_value, self.expression()))
                     if self.accept("COMMA") is None:
                         break
                     if self.current.kind == "RBRACE":

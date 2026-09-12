@@ -36,6 +36,7 @@ _PUNCTUATION = {
     ",": "COMMA",
     "=": "EQUAL",
     "+": "PLUS",
+    "@": "AT",
 }
 
 
