@@ -6,7 +6,7 @@
 
 **Architecture:** Parser adapters emit canonical typed facts; identity resolvers and cross-language linkers convert only proven facts into the staging graph while ambiguous results remain candidate audit nodes. Every capability participates in the existing execution plan, provenance, correction, validation, fingerprint, and atomic publication pipeline.
 
-**Tech Stack:** Python 3.10+, SQLite, Universal Ctags, `tree-sitter==0.26.0`, `tree-sitter-c==0.24.2`, `tree-sitter-cpp==0.23.4`, `tree-sitter-rust==0.24.2`, pytest, Bash/WSL.
+**Tech Stack:** Python 3.10+, SQLite, Universal Ctags, `tree-sitter==0.25.2`, `tree-sitter-c==0.24.2`, `tree-sitter-cpp==0.23.4`, `tree-sitter-rust==0.24.2`, pytest, Bash/WSL.
 
 **Spec:** `doc/designs/2026-08-25-native-jni-build-static-graph-v01-design.md`
 

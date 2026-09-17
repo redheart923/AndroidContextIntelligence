@@ -4,9 +4,20 @@ from pathlib import Path
 
 from collectors.facts.model import DiagnosticFact, RelationFact, SymbolFact
 from collectors.native.cpp_syntax import parse_cpp_file
+from collectors.native.treesitter_runtime import load_grammar
 
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures/native/cpp"
+
+
+def test_grammar_runtime_retains_the_language_owner() -> None:
+    runtime = load_grammar("cpp")
+
+    actual_abi = getattr(runtime.language, "abi_version", None)
+    if actual_abi is None:
+        actual_abi = runtime.language.version
+    assert actual_abi == runtime.abi_version
+    assert runtime.parser.language == runtime.language
 
 
 def test_cpp_parser_extracts_namespace_type_method_include_and_inheritance(

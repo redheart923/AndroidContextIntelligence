@@ -16,6 +16,7 @@ class GrammarRuntime:
     runtime_version: str
     abi_version: int
     fingerprint: str
+    language: Language
     parser: Parser
 
 
@@ -35,12 +36,15 @@ def load_grammar(language: str) -> GrammarRuntime:
     else:
         raise ValueError(f"unsupported Tree-sitter language: {language}")
     tree_sitter_language = Language(grammar.language())
+    abi_version = getattr(tree_sitter_language, "abi_version", None)
+    if abi_version is None:
+        abi_version = tree_sitter_language.version
     package_version = version(package)
     runtime_version = version("tree-sitter")
     name = f"tree-sitter-{language}"
     payload = json.dumps(
         {
-            "abi_version": tree_sitter_language.abi_version,
+            "abi_version": abi_version,
             "grammar": name,
             "package": package,
             "package_version": package_version,
@@ -54,7 +58,8 @@ def load_grammar(language: str) -> GrammarRuntime:
         package=package,
         package_version=package_version,
         runtime_version=runtime_version,
-        abi_version=tree_sitter_language.abi_version,
+        abi_version=abi_version,
         fingerprint=hashlib.sha256(payload).hexdigest(),
+        language=tree_sitter_language,
         parser=Parser(tree_sitter_language),
     )
