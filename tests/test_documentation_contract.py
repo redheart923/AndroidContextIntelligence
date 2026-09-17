@@ -135,3 +135,36 @@ def test_project_readme_documents_partial_source_profile() -> None:
         "degraded",
     ):
         assert token in text
+
+
+def test_readmes_document_native_jni_and_build_graph_contract() -> None:
+    combined = README.read_text(encoding="utf-8") + PROJECT_README.read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "native_symbols",
+        "jni_bindings",
+        "soong_build_graph",
+        "--build-inputs",
+        "build_inputs.local.toml",
+        "native-pipeline-report.json",
+        "EXTRACTION_CANDIDATE",
+        "effective_node",
+        "native_capability_summary.sql",
+        "jni_binding_summary.sql",
+        "soong_native_module_summary.sql",
+    ):
+        assert token in combined
+
+
+def test_native_acceptance_keeps_unexecuted_boundaries_explicit() -> None:
+    acceptance = (
+        ROOT
+        / "doc/reviews/2026-08-25-native-jni-build-static-graph-v01-acceptance.md"
+    )
+    text = acceptance.read_text(encoding="utf-8")
+
+    assert "WSL partial acceptance" in text
+    assert "Full AOSP rebuild: NOT RUN" in text
+    assert "Generated Soong/Ninja acceptance: NOT RUN" in text
+    assert "Precision native call/dataflow acceptance: NOT RUN" in text

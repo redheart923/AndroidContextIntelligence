@@ -337,12 +337,12 @@ assert connection.execute(
 **Interfaces:**
 - Documents source config, build-input config, strict gates, reports, queries, upgrade behavior and exact `NOT RUN` boundaries.
 
-- [ ] **Step 1: Write failing documentation/payload contract assertions for `native_symbols`, `jni_bindings`, `soong_build_graph`, `--build-inputs`, candidate isolation and real-AOSP `NOT RUN`.**
-- [ ] **Step 2: Update canonical documentation, installation manifest and installer exclusions; preserve `config/build_inputs.local.toml` across upgrades and exclude it from payload hash comparison exactly like `source_roots.local.toml`. Do not add generated DB/cache/local config to payload.**
-- [ ] **Step 3: Run root and project test suites, setup verify-only, payload sync and shell syntax checks.**
-- [ ] **Step 4: Deploy in WSL with root `setup.sh --upgrade`, run partial `--plan-only`, rebuild, strict native/Soong/JNI fixture gates, FK check and summary queries. Record literal commands/output in the acceptance document.**
-- [ ] **Step 5: Mark fixture and WSL partial results separately; keep full AOSP, generated Soong/Ninja and precision native call/dataflow acceptance as `NOT RUN`.**
-- [ ] **Step 6: Commit with `git commit -m "docs: accept native jni build static graph v0.1"`.**
+  - [x] **Step 1: Write failing documentation/payload contract assertions for `native_symbols`, `jni_bindings`, `soong_build_graph`, `--build-inputs`, candidate isolation and real-AOSP `NOT RUN`.**
+  - [x] **Step 2: Update canonical documentation, installation manifest and installer exclusions; preserve `config/build_inputs.local.toml` across upgrades and exclude it from payload hash comparison exactly like `source_roots.local.toml`. Do not add generated DB/cache/local config to payload.**
+  - [x] **Step 3: Run root and project test suites, setup verify-only, payload sync and shell syntax checks.**
+  - [x] **Step 4: Deploy in WSL with root `setup.sh --upgrade`, run partial `--plan-only`, rebuild, strict native/Soong/JNI fixture gates, FK check and summary queries. Record literal commands/output in the acceptance document.**
+  - [x] **Step 5: Mark fixture and WSL partial results separately; keep full AOSP, generated Soong/Ninja and precision native call/dataflow acceptance as `NOT RUN`.**
+  - [x] **Step 6: Commit with `git commit -m "docs: accept native jni build static graph v0.1"`.**
 
 ## Final Review and Integration
 

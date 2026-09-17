@@ -1,14 +1,24 @@
-# Optional generated build metadata. Copy to build_inputs.local.toml and edit
-# paths, hashes and source revisions for the exact source snapshot being built.
-
-[[inputs]]
-kind = "ninja"
-path = "/home/ts/artifacts/out/soong/build.ninja"
-repository = "frameworks/base"
-optional = true
+# Copy to build_inputs.local.toml to consume trusted generated build metadata.
+# Relative paths are resolved from this config file. Add sha256 and
+# source_revision whenever the producer can provide them.
 
 [[inputs]]
 kind = "compile_commands"
-path = "/home/ts/artifacts/compile_commands.json"
-repository = "frameworks/base"
+path = "/home/ts/aosp/out/soong/development/ide/compdb/compile_commands.json"
+repository = "frameworks/native"
+optional = true
+
+[[inputs]]
+kind = "module_info"
+path = "/home/ts/aosp/out/target/product/<product>/module-info.json"
+optional = true
+
+[[inputs]]
+kind = "ninja"
+path = "/home/ts/aosp/out/combined-<product>.ninja"
+optional = true
+
+[[inputs]]
+kind = "rust_project"
+path = "/home/ts/aosp/out/soong/rust-project.json"
 optional = true

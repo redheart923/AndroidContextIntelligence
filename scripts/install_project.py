@@ -31,6 +31,7 @@ from scripts.project_payload import (  # noqa: E402
 PRESERVED_RUNTIME_DIRECTORIES = ("data", ".venv")
 PRESERVED_LOCAL_FILES = (
     "config/source_roots.local.toml",
+    "config/build_inputs.local.toml",
     "configs/local.yaml",
 )
 LEGACY_SOURCE_CONFIG = "config/source_roots.toml"

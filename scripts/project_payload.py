@@ -78,7 +78,10 @@ class PayloadManifestError(ValueError):
 
 
 def _is_excluded(relative_path: Path) -> bool:
-    if relative_path.as_posix() == "config/source_roots.local.toml":
+    if relative_path.as_posix() in {
+        "config/source_roots.local.toml",
+        "config/build_inputs.local.toml",
+    }:
         return True
     if any(part in _EXCLUDED_DIRECTORY_NAMES for part in relative_path.parts[:-1]):
         return True

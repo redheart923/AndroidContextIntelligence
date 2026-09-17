@@ -52,6 +52,8 @@ include = ["core", "services", "{version}"]
         "config/source_roots.local.toml.example",
         '[workspace]\naosp_root = "/home/ts/aosp"\n',
     )
+    write(root, "config/build_inputs.default.toml", f"# {version}\ninputs = []\n")
+    write(root, "config/build_inputs.local.toml.example", "inputs = []\n")
     write(root, "configs/local.yaml", f"version: {version}\n")
     return root
 
@@ -140,6 +142,12 @@ languages = ["java", "kotlin", "aidl", "xml"]
         "config/source_roots.local.toml",
         local_config,
     )
+    build_inputs_local = '''[[inputs]]
+kind = "compile_commands"
+path = "/local/out/compile_commands.json"
+optional = true
+'''
+    write(target, "config/build_inputs.local.toml", build_inputs_local)
     write(target, "configs/local.yaml", "local: true\n")
     write(target, "workspace/obsolete.py", "obsolete\n")
 
@@ -161,6 +169,12 @@ languages = ["java", "kotlin", "aidl", "xml"]
     assert (
         target / "config/source_roots.local.toml"
     ).read_text(encoding="utf-8") == local_config
+    assert (
+        target / "config/build_inputs.local.toml"
+    ).read_text(encoding="utf-8") == build_inputs_local
+    assert (target / "config/build_inputs.default.toml").read_text(
+        encoding="utf-8"
+    ) == "# v2\ninputs = []\n"
     assert '"v2"' in (
         target / "config/source_roots.default.toml"
     ).read_text(encoding="utf-8")

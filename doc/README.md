@@ -26,6 +26,7 @@
 - [Permission Semantics Graph v0.1](designs/2026-07-21-permission-semantics-graph-v01-design.md)：权限声明、请求、privapp/default-permissions 策略以及 Java/Kotlin 检查与执行语义设计。
 - [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](designs/2026-08-20-java-kotlin-call-dataflow-graph-v01-design.md)：CodeQL 调用点、跨方法安全数据流、类型化存储、验证和 Git 纠错设计。
 - [Partial Source Workspace Profile v0.1](designs/2026-08-24-partial-source-workspace-profile-v01-design.md)：局部源码的显式 scope、通用发布门禁、能力降级、provenance 和原子发布设计；尚未实施。
+- [Native/JNI/Build Static Graph v0.1](designs/2026-08-25-native-jni-build-static-graph-v01-design.md)：C/C++/Rust、JNI、Soong/Ninja 的确定性静态事实、候选隔离和原子发布设计。
 
 ## Plans
 
@@ -34,6 +35,7 @@ below for fixture, publication-integrity, and real WSL partial-source evidence.
 
 - [Java/Kotlin Call and Interprocedural Dataflow Graph v0.1](plans/2026-08-20-java-kotlin-call-dataflow-graph-v01-plan.md): CodeQL database preparation, typed semantic storage, call/dataflow/security facts, corrections, atomic publication, and real-AOSP acceptance plan.
 - [Partial Source Workspace Profile v0.1](plans/2026-08-24-partial-source-workspace-profile-v01-plan.md): scope identity, two-phase validation, provenance-bound publication, atomic failure gates, and partial-source acceptance plan.
+- [Native/JNI/Build Static Graph v0.1](plans/2026-08-25-native-jni-build-static-graph-v01-plan.md)：native/JNI/build 事实层的分任务 TDD、部署和验收计划。
 
 可执行实施计划和验收记录。
 
@@ -57,6 +59,7 @@ below for fixture, publication-integrity, and real WSL partial-source evidence.
 - [Post-Permission Repository Architecture Review](reviews/2026-07-28-post-permission-repository-architecture-review.md)：Permission 完成后的全仓库风险复核与下一阶段边界。
 - [Trustworthy Multi-Source Ingestion v0.1 Acceptance](reviews/2026-08-04-trustworthy-multi-source-ingestion-v01-acceptance.md)：安装生命周期、真实 AOSP 双构建、Vendor/发布恢复、性能和仓库门禁证据。
 - [Java/Kotlin Call and Dataflow Graph v0.1 Acceptance](reviews/2026-08-20-java-kotlin-call-dataflow-v01-acceptance.md)：CodeQL 数据库、真实 AOSP 强证据、纠错、原子发布与双构建指纹。
+- [Native/JNI/Build Static Graph v0.1 Acceptance](reviews/2026-08-25-native-jni-build-static-graph-v01-acceptance.md)：fixture、WSL partial、原子发布和明确未运行边界。
 
 ## 文档分类规范
 

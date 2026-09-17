@@ -83,6 +83,8 @@ def test_iter_payload_files_excludes_runtime_and_generated_content(
     write(tmp_path, ".git/config")
     write(tmp_path, "backups/project.tar.gz")
     write(tmp_path, "unmanaged/notes.txt")
+    write(tmp_path, "config/source_roots.local.toml")
+    write(tmp_path, "config/build_inputs.local.toml")
 
     assert relative_paths(tmp_path) == ("workspace/module.py",)
 

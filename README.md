@@ -461,5 +461,35 @@ python scripts/graph_diff.py \
   --format json
 ```
 
-当前范围不包含 C/C++/Rust、Native Binder、任意全程序污点传播或运行时调用观测。
-历史目录默认只保留报告；只有显式传入 `--retain-history-database` 才复制 SQLite。
+Java/Kotlin CodeQL 范围不包含 native 精确调用/数据流、Native Binder、任意全程序
+污点传播或运行时调用观测。历史目录默认只保留报告；只有显式传入
+`--retain-history-database` 才复制 SQLite。
+
+## 15. Native/JNI/Soong 静态图 v0.1
+
+规范重建现在会按 execution plan 扫描 C、C++、Rust、Java/Kotlin native 声明和
+`Android.bp`。主要能力名为 `native_symbols`、`native_types`、`native_includes`、
+`rust_ffi`、`jni_bindings` 和 `soong_build_graph`。`ninja_build_graph` 仅在显式
+提供可信生成产物时可用。
+
+Ctags 继续负责宽覆盖符号，Tree-sitter 和专用解析器补充结构语义。无法唯一解析的
+事实写为 `EXTRACTION_CANDIDATE`，不会进入 `effective_node` 或 `effective_edge`。
+
+可选构建产物使用本机 `config/build_inputs.local.toml`，升级时保留且不进入 payload
+hash。可从 `config/build_inputs.local.toml.example` 复制，也可临时指定：
+
+```bash
+bash scripts/rebuild_all.sh \
+  --build-inputs config/build_inputs.local.toml \
+  --strict-capability native_symbols \
+  --strict-capability jni_bindings \
+  --strict-capability soong_build_graph
+```
+
+支持 `compile_commands`、`rust_project`、`module_info` 和 `ninja`。证据与查询包括
+`data/raw/native-pipeline-report.json`、`queries/native_capability_summary.sql`、
+`queries/jni_binding_summary.sql` 和 `queries/soong_native_module_summary.sql`。
+
+实现边界见 [设计](doc/designs/2026-08-25-native-jni-build-static-graph-v01-design.md)、
+[计划](doc/plans/2026-08-25-native-jni-build-static-graph-v01-plan.md) 和
+[验收](doc/reviews/2026-08-25-native-jni-build-static-graph-v01-acceptance.md)。

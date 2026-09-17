@@ -31,5 +31,6 @@ Thumbs.db
 # Local snapshots, worktrees, and installation staging
 .worktrees/
 android-context-current/
+project/config/*.local.toml
 .install-staging-*/
 .install-rollback-*/

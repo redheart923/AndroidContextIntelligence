@@ -220,3 +220,36 @@ bash scripts/rebuild_all.sh --strict-capability call_graph \
 
 局部构建通过不代表完整 AOSP 覆盖，也不能用节点数量推断完整性。未配置
 `analysis_scope` 时仍默认为 `aosp`，保留原有严格的 Framework/AOSP 门禁。
+
+## Native/JNI/Soong static graph v0.1
+
+The atomic rebuild imports deterministic C/C++/Rust symbols and types, native
+includes, Rust C-ABI exports, Java/Kotlin-to-native bindings, and statically
+resolvable Soong facts. Capabilities are `native_symbols`, `native_types`,
+`native_includes`, `rust_ffi`, `jni_bindings`, and `soong_build_graph`.
+
+Ctags remains the broad symbol index. Tree-sitter and dedicated adapters add
+structural evidence. Ambiguous results are stored as `EXTRACTION_CANDIDATE` and
+excluded from `effective_node` and `effective_edge`.
+
+Copy `config/build_inputs.local.toml.example` to
+`config/build_inputs.local.toml` for trusted `compile_commands`, `rust_project`,
+`module_info`, or `ninja` artifacts. The local file is preserved across upgrade
+and excluded from the payload hash. Override it per run with `--build-inputs`.
+
+```bash
+bash scripts/rebuild_all.sh \
+  --build-inputs config/build_inputs.local.toml \
+  --strict-capability native_symbols \
+  --strict-capability jni_bindings \
+  --strict-capability soong_build_graph
+
+sqlite3 -header -column data/android_context.db < queries/native_capability_summary.sql
+sqlite3 -header -column data/android_context.db < queries/jni_binding_summary.sql
+sqlite3 -header -column data/android_context.db < queries/soong_native_module_summary.sql
+```
+
+The atomic report is `data/raw/native-pipeline-report.json`; typed raw facts are
+under `data/raw/native`, `data/raw/build`, and `data/raw/interop`. This release
+does not claim full-AOSP, generated Soong/Ninja, or precision native
+call/dataflow acceptance.

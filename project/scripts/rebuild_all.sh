@@ -5,7 +5,13 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SOURCE_CONFIG="$PROJECT_ROOT/config/source_roots.default.toml"
 LOCAL_CONFIG="$PROJECT_ROOT/config/source_roots.local.toml"
 REGISTRY="$PROJECT_ROOT/config/parser_registry.toml"
-BUILD_INPUTS="$PROJECT_ROOT/config/build_inputs.default.toml"
+BUILD_INPUTS_DEFAULT="$PROJECT_ROOT/config/build_inputs.default.toml"
+BUILD_INPUTS_LOCAL="$PROJECT_ROOT/config/build_inputs.local.toml"
+if [[ -f "$BUILD_INPUTS_LOCAL" ]]; then
+    BUILD_INPUTS="$BUILD_INPUTS_LOCAL"
+else
+    BUILD_INPUTS="$BUILD_INPUTS_DEFAULT"
+fi
 VENDOR_INPUT="$PROJECT_ROOT/vendor-input"
 VENDOR_CACHE="$PROJECT_ROOT/.cache/vendor-artifacts"
 SERVICE_CACHE="$PROJECT_ROOT/.cache/service-registration"

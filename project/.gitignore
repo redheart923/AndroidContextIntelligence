@@ -11,3 +11,4 @@ data/.publish-journal.json
 data/.rebuild.lock
 .cache/
 vendor-input/
+config/*.local.toml

@@ -33,6 +33,7 @@ Preserved upgrade paths:
   .venv/
   data/
   config/source_roots.local.toml
+  config/build_inputs.local.toml
   configs/local.yaml
 
 Source configuration:
@@ -40,6 +41,23 @@ Source configuration:
   config/source_roots.local.toml.example documents machine-local overrides.
   config/source_roots.local.toml is unmanaged and preserved during upgrade.
   Legacy config/source_roots.toml is migrated to the local override on upgrade.
+
+Optional native build metadata:
+  Managed default: config/build_inputs.default.toml
+  Local example: config/build_inputs.local.toml.example
+  Preserved local config: config/build_inputs.local.toml
+  CLI override: scripts/rebuild_all.sh --build-inputs FILE
+  Supported inputs: compile_commands, rust_project, module_info, ninja
+
+Native/JNI/build static graph:
+  Pipeline: python -m workspace.native_pipeline
+  Capabilities: native_symbols, native_types, native_includes, rust_ffi,
+                jni_bindings, soong_build_graph, ninja_build_graph
+  Report: data/raw/native-pipeline-report.json
+  Queries: queries/native_capability_summary.sql,
+           queries/jni_binding_summary.sql,
+           queries/soong_native_module_summary.sql
+  EXTRACTION_CANDIDATE nodes remain outside effective_node/effective_edge.
 
 Runtime databases, reports, virtual environments, caches, backups, vendor
 inputs, and decompiler output are not part of this canonical payload.
